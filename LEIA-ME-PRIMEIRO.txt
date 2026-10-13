@@ -1,0 +1,49 @@
+IPTV DOWNLOADER WEB — 2.0.26 BETA (MOTOR ORIGINAL C#)
+
+O QUE EH ESTE ARQUIVO
+- Primeira versao de TESTE da interface web do projeto IPTV Downloader 2.0.26.
+- Nao e um APK e nao e um aplicativo que funciona apenas com HTML/JS.
+- A INTERFACE aparece no navegador; O MOTOR e os downloads executam no C# da maquina servidora.
+- Nao alteramos o codigo original 2.0.26, incluido como Original_Avalonia_2.0.26.
+- O projeto Web compila os arquivos XtreamClient.cs, DownloadService.cs e SettingsStore.cs originais, alem de utilitarios e modelos.
+
+INSTALACAO — ZORIN OS / UBUNTU / LINUX
+1. Instale o SDK oficial do .NET 8 (ou superior com suporte a net8.0):
+   https://dotnet.microsoft.com/download/dotnet/8.0
+2. Extraia o ZIP.
+3. Abra um terminal dentro da pasta extraida.
+4. Execute: bash iniciar-web-linux.sh
+5. Quando iniciar, abra no navegador: http://localhost:5078
+
+INSTALACAO — WINDOWS
+1. Instale o SDK .NET 8: https://dotnet.microsoft.com/download/dotnet/8.0
+2. Extraia o ZIP e clique duas vezes no iniciar-web-windows.bat.
+3. Abra http://localhost:5078
+
+LINHA DE COMANDO MANUAL
+cd Web
+dotnet restore
+dotnet run --project IPTVDownloader.Web.csproj --urls http://127.0.0.1:5078
+
+RECURSOS DISPONIVEIS NA BETA
+- Conectar uma conta Xtream (servidor/usuario/senha) e salvar para reuso.
+- Catalogo de filmes e series, temporadas e episodios com ordenacao numerica.
+- Buscar ignorando acentos, filtro de categoria, indice alfabetico, 30 itens por pagina.
+- Adicionar filmes, episodios, temporadas inteiras e series inteiras a fila.
+- MOTOR ORIGINAL C#: um download de cada vez, progresso, velocidade, pausar,
+  continuar, cancelar o atual, salvar arquivos sem acentos conforme o motor original.
+- Configurar destino no computador do motor e ocultar conteudo adulto.
+
+LIMITES CONHECIDOS / SEGURANCA
+- Esta e uma BETA. Nao testamos compilacao/execucao real neste ambiente porque
+  nao ha SDK dotnet instalado aqui; a sintaxe JavaScript e o pacote foram validados.
+- Nao foi feita validacao com uma conta IPTV real (nao fornecida).
+- A fila e o estado de download em andamento nao sobrevivem ao encerramento do servidor.
+- Os arquivos ficam na maquina que roda o servidor C#, nao no dispositivo/navegador.
+- Dados salvos: o motor original grava contas em arquivos locais do perfil do usuario;
+  trate a pasta como confidencial.
+- O servidor escuta APENAS em 127.0.0.1 para evitar acesso indevido pela rede.
+  Nao expose 0.0.0.0 / acesso publico sem adicionar autenticacao HTTPS segura.
+- O app web nao substitui completamente todas as telas e funcoes Avalonia
+  (por exemplo, player incorporado e historico nao estao nesta beta).
+- Utilize somente conteudos e listas para os quais voce tenha autorizacao.

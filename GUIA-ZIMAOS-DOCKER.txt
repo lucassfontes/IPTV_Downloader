@@ -1,0 +1,52 @@
+IPTV DOWNLOADER WEB 2.0.26 — PACOTE ZIMAOS / DOCKER (BETA)
+
+OBJETIVO
+Voce cuida SOMENTE de permitir ao conteiner acesso a SSD/HD no ZimaOS.
+O aplicativo recebe o caminho interno (ex: /storage), cria dentro dele
+"IP Downloader" e organiza automaticamente os arquivos.
+
+EXEMPLO (SSD2 montado como /storage no conteiner):
+/storage/IP Downloader/
+  filmes/
+    Nome do Filme.mkv
+  series/
+    Nome da Serie/
+      Temporada 01/
+        Episodio S01E01.mkv
+
+COMO CONFIGURAR
+1. Extraia este ZIP em alguma pasta acessivel no servidor ZimaOS.
+2. Veja no ZimaOS o CAMINHO REAL do seu SSD, por exemplo /media/SSD2.
+3. No docker-compose.yml, troque SÓ esta linha:
+      - /CAMINHO/DO/SSD2:/storage
+   por:
+      - /media/SSD2:/storage
+   IMPORTANTE: /media/SSD2 e APENAS EXEMPLO. O caminho do seu sistema pode mudar.
+   Se preferir, adicione esse mapeamento pelo painel do ZimaOS com destino
+   interno /storage. O caminho escolhido no navegador e SEMPRE o caminho
+   INTERNO do conteiner, por exemplo /storage, nunca o caminho do host.
+4. Pelo terminal do servidor, na pasta deste projeto, execute:
+      docker compose up -d --build
+   Se o ZimaOS so aceitar YAML e nao conseguir construir imagem pelo painel,
+   faca o build pelo terminal antes. O Dockerfile usa .NET 8 dentro da imagem.
+5. Na rede local, abra no navegador:
+      http://IP-DO-ZIMAOS:5078
+6. Em "Downloads / Configuracoes", a pasta de destino deve ser /storage.
+   O aplicativo cria /storage/IP Downloader/filmes e /series automaticamente.
+7. Para outro SSD, voce pode mapear outro diretorio do ZimaOS no conteiner
+   (por exemplo em /storage2), e selecionar /storage2 nas configuracoes.
+   Para ficar tudo na mesma pasta central, selecione a unidade PAI.
+
+ATENCAO
+- Nao e necessario instalar .NET no ZimaOS: o Dockerfile usa imagens .NET 8.
+- O codigo original C# foi reaproveitado e continua ordenando episodios e
+  baixando um arquivo de cada vez. Este pacote ainda NAO teve build .NET e
+  download real testados neste ambiente. Trate-o como BETA.
+- O painel web NAO TEM LOGIN PROPRIO. Nao exponha a porta 5078 a internet;
+  use apenas rede local confiavel ou VPN segura, com acesso restrito.
+- As credenciais IPTV ficam salvas em /appdata (volume iptv_dados).
+- A pasta /storage deve ter permissoes de escrita para o processo Docker.
+- Nunca monte a raiz completa do servidor (/). Compartilhe apenas o necessario.
+- Para ver erros: docker compose logs -f iptv-downloader
+- Para parar: docker compose down
+- Use somente listas e arquivos de midia a que voce tenha direito.

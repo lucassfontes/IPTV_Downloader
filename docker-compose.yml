@@ -1,0 +1,59 @@
+# IPTV Downloader Web 2.0.26 (Beta) - ZimaOS
+# Importe este YAML em Aplicativo personalizado no ZimaOS.
+# O app precisa estar extraido em /DATA/Downloads/IPTV-Web,
+# de modo que o arquivo /DATA/Downloads/IPTV-Web/Web/IPTVDownloader.Web.csproj exista.
+# IP abaixo retirado da tela de seu ZimaOS: atualize se o servidor mudar de IP.
+name: iptv-downloader-web
+services:
+  IPTV-Downloader:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    container_name: iptv-downloader-web
+    restart: unless-stopped
+    working_dir: /project/Web
+    command:
+      - dotnet
+      - run
+      - --no-launch-profile
+      - --project
+      - /project/Web/IPTVDownloader.Web.csproj
+    environment:
+      ASPNETCORE_URLS: "http://0.0.0.0:5078"
+      XDG_DATA_HOME: /appdata
+      IPTV_DOWNLOAD_PARENT: /storage
+      IPTV_DOWNLOAD_ROOT_NAME: "iptv_dowload"
+    ports:
+      - target: 5078
+        published: "5078"
+        protocol: tcp
+    volumes:
+      - /DATA/Downloads/IPTV-Web:/project
+      - /DATA/AppData/iptv-downloader-web:/appdata
+      - /media/devmon/MEDIA:/storage
+
+x-casaos:
+  id: com.local.iptvdownloader.web
+  main: IPTV-Downloader
+  title:
+    en_US: IPTV Downloader Web
+    pt_BR: IPTV Downloader Web
+  tagline:
+    en_US: IPTV manager and downloader
+    pt_BR: Gerenciador e downloader IPTV
+  description:
+    en_US: Web interface with C# backend to manage authorized IPTV downloads.
+    pt_BR: Interface web com motor C# para gerenciar downloads IPTV autorizados.
+  author: Custom
+  developer: Custom
+  category: Entertainment
+  architectures:
+    - amd64
+    - arm64
+  version: "2.0.26-beta"
+  index: /
+  scheme: http
+  hostname: "192.168.0.8"
+  port_map: "5078"
+  # Usa o icone existente em Web/wwwroot/icon.png, servido pela propria aplicacao.
+  # A URL exige que o servidor esteja ligado e acessivel na rede local.
+  # Em algumas versoes do ZimaOS o campo de IP da Web UI fica cinza (fixado pelo sistema).
+  icon: "http://192.168.0.8:5078/icon.png"

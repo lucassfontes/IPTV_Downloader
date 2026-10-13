@@ -1,0 +1,276 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="IPTVDownloader.MainWindow"
+        Title="IPTV Downloader"
+        Width="1360" Height="860"
+        MinWidth="980" MinHeight="680"
+        Background="#0b1220"
+        Icon="/Assets/iptv-downloader.ico">
+
+  <Window.Styles>
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="Background" Value="#26374b" />
+      <Setter Property="Foreground" Value="#f8fafc" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="#0b1220" />
+      <Setter Property="BorderBrush" Value="#2c3f57" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Foreground" Value="#f8fafc" />
+      <Setter Property="TextAlignment" Value="Left" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="Background" Value="#1f4b7a" />
+      <Setter Property="BorderBrush" Value="#2c3f57" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="MinHeight" Value="30" />
+    </Style>
+    <Style Selector="Border.panel">
+      <Setter Property="Background" Value="#0f1724" />
+      <Setter Property="BorderBrush" Value="#2c3f57" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#182233" />
+      <Setter Property="BorderBrush" Value="#2c3f57" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="10" />
+      <Setter Property="Margin" Value="2,4" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#93a4ba" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="10,5,10,8">
+    <!-- Cabeçalho com abas -->
+    <Border Grid.Row="0" Classes="panel" Padding="8,5" Margin="0,0,0,4">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button Content="Lista" MinWidth="94" Height="30"
+                  Background="{Binding ListTabColor}"
+                  Command="{Binding SelectConfigTabCommand}" CommandParameter="Lista" />
+          <Button Content="Conexão" MinWidth="94" Height="30"
+                  Background="{Binding ConnectionTabColor}"
+                  Command="{Binding SelectConfigTabCommand}" CommandParameter="Conexão" />
+          <Button Content="Downloads" MinWidth="104" Height="30"
+                  Background="{Binding DownloadsTabColor}"
+                  Command="{Binding SelectConfigTabCommand}" CommandParameter="Downloads" />
+        </StackPanel>
+        <Button Grid.Column="1" Content="{Binding ConfigToggleText}" MinWidth="212" Height="30"
+                Command="{Binding ToggleConfigCommand}" />
+      </Grid>
+    </Border>
+
+    <!-- Configuração: só uma aba aparece -->
+    <Border Grid.Row="1" Classes="panel" Padding="7,4" Margin="0,0,0,4" IsVisible="{Binding ConfigVisible}">
+      <Grid>
+        <Grid IsVisible="{Binding IsListConfigVisible}" ColumnDefinitions="240,Auto,Auto,Auto,*" ColumnSpacing="6">
+          <StackPanel>
+            <TextBlock Text="Lista salva" Classes="label" />
+            <ComboBox ItemsSource="{Binding SavedAccounts}" SelectedItem="{Binding SelectedAccount}" Height="30" />
+          </StackPanel>
+          <Button Grid.Column="1" Content="Abrir" MinWidth="86" Height="30" VerticalAlignment="Bottom"
+                  Background="#1f4b7a" Command="{Binding OpenSavedAccountCommand}" />
+          <Button Grid.Column="2" Content="Atualizar" MinWidth="94" Height="30" VerticalAlignment="Bottom"
+                  Command="{Binding RefreshCatalogCommand}" />
+          <Button Grid.Column="3" Content="Excluir" MinWidth="86" Height="30" VerticalAlignment="Bottom"
+                  Background="#8f1d1d" Command="{Binding DeleteAccountCommand}" />
+        </Grid>
+
+        <Grid IsVisible="{Binding IsConnectionConfigVisible}" ColumnDefinitions="*,150,150,Auto,Auto" ColumnSpacing="7">
+          <StackPanel>
+            <TextBlock Text="Servidor" Classes="label" />
+            <TextBox Text="{Binding Server}" Watermark="http://servidor:porta" Height="30" />
+          </StackPanel>
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="Usuário" Classes="label" />
+            <TextBox Text="{Binding Username}" Watermark="Usuário" Height="30" />
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Text="Senha" Classes="label" />
+            <TextBox Text="{Binding Password}" PasswordChar="●" Watermark="Senha" Height="30" />
+          </StackPanel>
+          <Button Grid.Column="3" Content="Carregar" MinWidth="92" Height="30" VerticalAlignment="Bottom"
+                  Background="#1f4b7a" Command="{Binding ValidateConnectionCommand}" />
+          <Button Grid.Column="4" Content="Salvar" MinWidth="86" Height="30" VerticalAlignment="Bottom"
+                  Command="{Binding SaveAccountCommand}" />
+        </Grid>
+
+        <Grid IsVisible="{Binding IsDownloadsConfigVisible}" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+          <StackPanel>
+            <TextBlock Text="Pasta de downloads" Classes="label" />
+            <TextBox Text="{Binding DownloadRoot, Mode=OneWay}" IsReadOnly="True" Height="30" />
+          </StackPanel>
+          <Button Grid.Column="1" Content="Alterar pasta" MinWidth="118" Height="30" VerticalAlignment="Bottom" Click="OnChooseFolder" />
+          <Button Grid.Column="2" Content="Ver pasta" MinWidth="96" Height="30" VerticalAlignment="Bottom" Click="OnOpenDownloadFolder" />
+          <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="3">
+            <CheckBox Content="Ocultar conteúdo XXX / Porno / +18" IsChecked="{Binding HideXxxContent}" />
+            <CheckBox Content="Remover itens da seleção ao concluir" IsChecked="{Binding RemoveCompletedFromSelection}" />
+          </StackPanel>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <!-- Busca e seleção -->
+    <Border Grid.Row="2" Classes="panel" Padding="8,5" Margin="0,0,0,4">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="7">
+        <StackPanel>
+          <TextBlock Text="Buscar filmes e séries" Classes="label" />
+          <TextBox x:Name="SearchBox" Text="{Binding SearchText}" Watermark="Digite o nome do conteúdo..."
+                   Height="30" KeyDown="OnSearchKeyDown" />
+        </StackPanel>
+        <Button Grid.Column="1" Content="Buscar" MinWidth="86" Height="30" VerticalAlignment="Bottom"
+                Background="#1f4b7a" Command="{Binding SearchCommand}" />
+        <Button Grid.Column="2" Content="Marcar visíveis" MinWidth="126" Height="30" VerticalAlignment="Bottom"
+                Command="{Binding SelectVisibleCommand}" />
+        <Button Grid.Column="3" Content="Desmarcar" MinWidth="104" Height="30" VerticalAlignment="Bottom"
+                Command="{Binding ClearSelectionCommand}" />
+        <Button Grid.Column="4" Content="{Binding DownloadSelectedText}" MinWidth="220" Height="30" VerticalAlignment="Bottom"
+                Background="#1f4b7a" Command="{Binding DownloadSelectedCommand}" />
+      </Grid>
+    </Border>
+
+    <!-- Conteúdo + paginação + voltar -->
+    <Border Grid.Row="3" Classes="panel" Padding="8,5" Margin="0,0,0,4">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+        <TextBlock Text="Conteúdo" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold" Foreground="#cbd5e1" />
+        <Button Grid.Column="1" Content="Filmes" MinWidth="88" Height="30" Command="{Binding MoviesCommand}" />
+        <Button Grid.Column="2" Content="Séries" MinWidth="88" Height="30" Margin="6,0,0,0" Command="{Binding SeriesCommand}" />
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" Margin="6,0,0,0">
+          <Button Content="★ Favoritos" MinWidth="114" Height="30" Command="{Binding FavoritesCommand}" />
+          <Button Content="Histórico" MinWidth="96" Height="30" Command="{Binding HistoryCommand}" />
+          <TextBlock Text="{Binding Counter}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#f8fafc" Margin="4,0,0,0" />
+        </StackPanel>
+        <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6">
+          <Button Content="←" Width="42" Height="30" Command="{Binding PrevPageCommand}" />
+          <TextBlock Text="{Binding PageText}" VerticalAlignment="Center" MinWidth="96" TextAlignment="Center" FontWeight="SemiBold" />
+          <Button Content="→" Width="42" Height="30" Command="{Binding NextPageCommand}" />
+          <TextBlock Text="{Binding PageSizeText}" VerticalAlignment="Center" Foreground="#93a4ba" />
+          <Button Content="← Voltar" MinWidth="96" Height="30" Command="{Binding BackCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Lista de cards + alfabeto -->
+    <Border Grid.Row="4" Classes="panel" Padding="6" Margin="0,0,0,5">
+      <Grid ColumnDefinitions="*,34" ColumnSpacing="6">
+        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto">
+          <TextBlock Text="{Binding ContentHeader}" FontSize="14" FontWeight="Bold" Foreground="#f8fafc" Margin="8,2,0,5" />
+          <Grid Grid.Row="1">
+            <ScrollViewer x:Name="ContentScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          ScrollChanged="OnContentScrollChanged">
+              <ItemsControl ItemsSource="{Binding VisibleItems}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Classes="card" PointerPressed="OnCardPointerPressed">
+                      <Grid ColumnDefinitions="96,*,Auto" ColumnSpacing="12">
+                        <Border Width="92" Height="132" CornerRadius="10" ClipToBounds="True" Background="#111a28">
+                          <Grid>
+                            <Image Source="{Binding CoverImage}" Stretch="UniformToFill" />
+                            <Path Data="{Binding CategoryIconGeometry}"
+                                  Width="44" Height="44" Stretch="Uniform"
+                                  Stroke="#60a5fa" StrokeThickness="1.8" Fill="Transparent"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  IsVisible="{Binding IsCategory}" />
+                          </Grid>
+                        </Border>
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Name}" FontSize="18" FontWeight="SemiBold" Foreground="#f8fafc"
+                                     TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding MetaText}" FontSize="14" FontWeight="SemiBold" Foreground="#93a4ba"
+                                     Margin="0,4,0,0" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding PlotText}" FontSize="13" Foreground="#cbd5e1" Margin="0,7,0,0"
+                                     TextWrapping="Wrap" IsVisible="{Binding HasPlot}" />
+                          <TextBlock Text="{Binding CreditsText}" FontSize="12" Foreground="#93a4ba" Margin="0,4,0,0"
+                                     TextWrapping="Wrap" IsVisible="{Binding HasCredits}" />
+                          <Border Background="#203348" CornerRadius="999" Padding="9,3" HorizontalAlignment="Left" Margin="0,7,0,0"
+                                  IsVisible="{Binding HasStatus}">
+                            <TextBlock Text="{Binding Status}" FontSize="11" FontWeight="SemiBold" />
+                          </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="7">
+                          <Button Content="Abrir categoria" MinWidth="164" Height="32" IsVisible="{Binding IsCategory}" Background="#1f4b7a" Command="{Binding OpenCommand}" />
+                          <Button Content="{Binding FavoriteText}" MinWidth="164" Height="32" IsVisible="{Binding IsFavoriteCapable}" Command="{Binding FavoriteCommand}" />
+                          <Button Content="{Binding SelectText}" MinWidth="164" Height="32" IsVisible="{Binding IsSelectable}" Command="{Binding ToggleSelectCommand}" />
+                          <Button Content="Abrir temporadas" MinWidth="164" Height="32" IsVisible="{Binding IsSeries}" Background="#1f4b7a" Command="{Binding OpenCommand}" />
+                          <Button Content="Abrir temporada" MinWidth="164" Height="32" IsVisible="{Binding IsSeason}" Background="#1f4b7a" Command="{Binding OpenCommand}" />
+                          <Button Content="Baixar temporada" MinWidth="164" Height="32" IsVisible="{Binding IsSeason}" Command="{Binding DownloadSeasonCommand}" />
+                          <Button Content="Baixar" MinWidth="164" Height="32" IsVisible="{Binding IsDownloadable}" Background="#1f4b7a" Command="{Binding DownloadCommand}" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+            <TextBlock Text="Carregando..." IsVisible="{Binding IsContentLoading}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center" FontSize="22" FontWeight="Bold"
+                       Foreground="#cbd5e1" />
+            <TextBlock Text="[Nenhum item encontrado]" IsVisible="{Binding ShowNoSearchResults}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center" FontSize="22" FontWeight="Bold"
+                       Foreground="#cbd5e1" />
+          </Grid>
+
+        </Grid>
+
+        <Border Grid.Column="1" Background="#101a28" BorderBrush="#2c3f57" BorderThickness="1" CornerRadius="10" Padding="3,4">
+          <ItemsControl ItemsSource="{Binding Alphabet}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Content="{Binding}" Width="24" Height="18" MinHeight="18" Padding="0" Margin="0,0,0,1"
+                        FontSize="9" Background="Transparent"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Click="OnAlphaClick" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Border>
+      </Grid>
+    </Border>
+
+    <!-- Download -->
+    <Border Grid.Row="5" Classes="panel" Padding="10,7">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Download" FontWeight="Bold" FontSize="13" />
+          <TextBlock Grid.Column="1" Text="{Binding OverallText}" Foreground="#cbd5e1" FontSize="12" FontWeight="SemiBold" />
+        </Grid>
+
+        <ProgressBar Grid.Row="1" Minimum="0" Maximum="1" Value="{Binding Progress}" Foreground="{Binding ProgressBrush}" Height="11" />
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="14">
+          <TextBlock Text="{Binding Status}" Foreground="#cbd5e1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Column="1" Text="{Binding SizeText}" Foreground="#cbd5e1" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="2" Text="{Binding RemainingTimeText}" Foreground="#cbd5e1" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="3" Text="{Binding SpeedText}" Foreground="#f8fafc" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </Grid>
+
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <CheckBox Content="Desligar ao finalizar todos os downloads" IsChecked="{Binding ShutdownAfterBatch}" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+            <Button Content="Ver pasta" Width="88" Height="30" Click="OnOpenDownloadFolder" />
+            <Button Content="Cancelar" Width="88" Height="30" Background="#8f1d1d" Command="{Binding CancelCommand}" />
+            <Button Content="{Binding PauseText}" Width="88" Height="30" Command="{Binding PauseCommand}" />
+          </StackPanel>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>
