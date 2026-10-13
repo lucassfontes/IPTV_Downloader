@@ -1,1 +1,0 @@
-# IPTV_Downloader_2.0.26_Docker
