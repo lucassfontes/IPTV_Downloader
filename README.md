@@ -1,106 +1,108 @@
-IPTV DOWNLOADER WEB — 2.0.26 BETA (MOTOR ORIGINAL C#)  
-O QUE EH ESTE ARQUIVO  
-- Primeira versao de TESTE da interface web do projeto IPTV Downloader 2.0.26.  
-- Nao e um APK e nao e um aplicativo que funciona apenas com HTML/JS.  
-- A INTERFACE aparece no navegador; O MOTOR e os downloads executam no C# da maquina servidora.  
-- Nao alteramos o codigo original 2.0.26, incluido como Original_Avalonia_2.0.26.  
-- O projeto Web compila os arquivos XtreamClient.cs, DownloadService.cs e SettingsStore.cs originais, alem de utilitarios e modelos.  
-INSTALACAO — ZORIN OS / UBUNTU / LINUX  
-1. Instale o SDK oficial do .NET 8 (ou superior com suporte a net8.0):  
- [https://dotnet.microsoft.com/download/dotnet/8.0](https://dotnet.microsoft.com/download/dotnet/8.0 "https://dotnet.microsoft.com/download/dotnet/8.0")  
-2. Extraia o ZIP.  
-3. Abra um terminal dentro da pasta extraida.  
-4. Execute: bash iniciar-web-linux.sh  
-5. Quando iniciar, abra no navegador: http://localhost:5078  
-INSTALACAO — WINDOWS  
-1. Instale o SDK .NET 8: [https://dotnet.microsoft.com/download/dotnet/8.0](https://dotnet.microsoft.com/download/dotnet/8.0 "https://dotnet.microsoft.com/download/dotnet/8.0")  
-2. Extraia o ZIP e clique duas vezes no iniciar-web-windows.bat.  
-3. Abra http://localhost:5078  
-LINHA DE COMANDO MANUAL  
+**IPTV Downloader Web — v2.0.26 Beta**  
+**Interface web com motor original em C# para gerenciar e baixar filmes e séries de listas IPTV autorizadas.**  
+A interface abre no navegador, mas os downloads são processados **no computador ou servidor em que o aplicativo está executando**. A versão Avalonia original continua disponível em Original_Avalonia_2.0.26/.  
+***Beta:*** * esta versão web ainda não reproduz todas as funções da versão desktop, como o player incorporado. Use somente listas e conteúdos para os quais você tenha autorização.*  
+**Instalação rápida no ZimaOS (Docker)**  
+É o método recomendado para executar o IPTV Downloader no servidor sem instalar o SDK .NET e sem copiar o código C# para o ZimaOS. A imagem já compilada é distribuída pelo GitHub Container Registry (GHCR).  
+**Arquivos para baixar**  
+- [**⬇️ Baixar IPTV_Downloader_Docker.yml — instalação **](https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/IPTV_Downloader_Docker.yml "https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/IPTV_Downloader_Docker.yml")  
+- [⬇️ Baixar o projeto completo (ZIP)](https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip "https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip")  
+- [Ver o código-fonte no GitHub](https://github.com/lucassfontes/IPTV_Downloader "https://github.com/lucassfontes/IPTV_Downloader")  
+***Importante:*** * o link do YAML funciona depois que o arquivo * *IPTV_Downloader_Docker.yml* * estiver salvo na raiz da branch * *main* * deste repositório. Se o download mostrar * ***404*** *, publique o YAML antes de prosseguir.*  
+**Passo a passo pelo painel do ZimaOS**  
+1. **Verifique a imagem Docker:** em [GitHub Packages, confira se iptv_downloader está definido como  **Public**. A publicação é realizada pelo workflow do GitHub Actions.](https://github.com/lucassfontes?tab=packages "https://github.com/lucassfontes?tab=packages")  
+2. **Baixe o YAML** pelo link acima.  
+3. Entre no ZimaOS e abra **Aplicativos → Instalar aplicativo personalizado → Importar**.  
+4. Importe IPTV_Downloader_Docker.yml e confira os campos antes de instalar.  
+5. **Confira o SSD.** O arquivo está configurado para a pasta do servidor /media/devmon/MEDIA, montada dentro do contêiner em /storage. Se o seu SSD estiver em outro caminho, edite a primeira parte do volume indicado abaixo.  
+6. Confira que a **porta 5078** está livre e mapeada para a porta interna  **5078**. Se o ZimaOS não preencher o endereço de Web UI automaticamente, configure http://IP-DO-ZIMAOS:5078/.  
+7. Clique em **Instalar** e aguarde a imagem ser baixada e o contêiner iniciar.  
+8. Acesse o aplicativo pelo ícone do ZimaOS ou pelo navegador. Por exemplo: http://192.168.0.8:5078/**se esse ainda for o IP do seu servidor**.  
+**Configuração do Docker**  
+| | |  
+|-|-|  
+| **Item** | **Configuração atual** |   
+| Imagem | ghcr.io/lucassfontes/iptv_downloader:latest |   
+| Porta do ZimaOS → contêiner | 5078 → 5078 |   
+| Endereço web | http://IP-DO-ZIMAOS:5078/ |   
+| Ícone | [icon.png no GitHub](https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/Web/wwwroot/icon.png "https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/Web/wwwroot/icon.png") |   
+| SSD/HD no ZimaOS | /media/devmon/MEDIA |   
+| Mesmo SSD dentro do Docker | /storage |   
+| Nome da pasta principal | iptv_dowload |   
+| Dados persistentes | /DATA/AppData/iptv-downloader-web |   
    
- cd Web  
+**Para trocar o disco**, altere somente o lado esquerdo deste volume no arquivo YAML, mantendo /storage à direita:  
+volumes:  
+   - /DATA/AppData/iptv-downloader-web:/appdata  
+   - /media/devmon/MEDIA:/storage  
    
- dotnet restore  
+Exemplo: se o disco no ZimaOS estiver em /media/SSD2, use /media/SSD2:/storage. Não é preciso criar as subpastas de filmes e séries manualmente, mas o Docker precisa ter permissão de escrita no disco.  
+**Onde os filmes e séries são salvos?**  
+O C# recebe a pasta **pai** /storage e cria automaticamente a pasta principal  **iptv_dowload** e as subpastas de conteúdo. A organização é semelhante a:  
+SSD ou HD (/media/devmon/MEDIA/)  
+ └── iptv_dowload/  
+     ├── filmes/  
+     │   └── Nome do Filme.mkv  
+     └── series/  
+         └── Nome da Serie/  
+             └── Temporada 01/  
+                 └── S01E01.mkv  
    
- dotnet run --project IPTVDownloader.Web.csproj --urls http://127.0.0.1:5078  
-RECURSOS DISPONIVEIS NA BETA  
-- Conectar uma conta Xtream (servidor/usuario/senha) e salvar para reuso.  
-- Catalogo de filmes e series, temporadas e episodios com ordenacao numerica.  
-- Buscar ignorando acentos, filtro de categoria, indice alfabetico, 30 itens por pagina.  
-- Adicionar filmes, episodios, temporadas inteiras e series inteiras a fila.  
-- MOTOR ORIGINAL C#: um download de cada vez, progresso, velocidade, pausar,  
+Se iptv_dowload já existir, o aplicativo reutiliza essa pasta; a instalação do Docker não apaga automaticamente o conteúdo do volume. Antes de trocar caminhos ou atualizar, faça backup dos arquivos importantes.  
+**Onde ficam as contas Xtream e as configurações?**  
+As contas salvas, configurações e dados do aplicativo ficam **fora do contêiner**, no servidor ZimaOS, pois o YAML monta /DATA/AppData/iptv-downloader-web:/appdata.  
+/DATA/AppData/iptv-downloader-web/  
+ └── iptv-downloader/  
+     ├── data/  
+     │   ├── contas.json       # contas Xtream lembradas  
+     │   ├── config.json       # configurações  
+     │   ├── favoritos.json    # favoritos  
+     │   └── historico.json    # histórico salvo  
+     └── cache/  
    
- continuar, cancelar o atual, salvar arquivos sem acentos conforme o motor original.  
-- Configurar destino no computador do motor e ocultar conteudo adulto.  
-LIMITES CONHECIDOS / SEGURANCA  
-- Esta e uma BETA. Nao testamos compilacao/execucao real neste ambiente porque  
+Uma conta só é gravada em contas.json quando a opção para lembrar/salvar a conta for usada. **As senhas Xtream nesse arquivo não são criptografadas:** proteja o diretório, não coloque o JSON no GitHub e não compartilhe backups publicamente. Para manter esses dados ao atualizar a imagem Docker, preserve o volume /DATA/AppData/iptv-downloader-web:/appdata.  
+**Atualizar a versão no ZimaOS**  
+Após uma nova compilação/publicação bem-sucedida no GitHub Actions, atualize/recrie o contêiner para baixar a nova imagem :latest, **preservando os volumes** do SSD e de /appdata. Publicar uma atualização no GitHub, sozinho, não atualiza automaticamente um contêiner já em execução.  
+**Diagnóstico**  
+Se o aplicativo não abrir:  
+1. Confirme se o contêiner iptv-downloader-web está **Em execução** no painel do ZimaOS.  
+2. Confirme que o pacote GHCR é público e a porta 5078 não está em uso por outro aplicativo.  
+3. Confira se o endereço da Web UI aponta para o IP local correto do ZimaOS.  
+4. Veja os registros do contêiner no ZimaOS ou execute, caso tenha terminal:  
+5. docker logs --tail 100 iptv-downloader-web  
    
- nao ha SDK dotnet instalado aqui; a sintaxe JavaScript e o pacote foram validados.  
-- Nao foi feita validacao com uma conta IPTV real (nao fornecida).  
-- A fila e o estado de download em andamento nao sobrevivem ao encerramento do servidor.  
-- Os arquivos ficam na maquina que roda o servidor C#, nao no dispositivo/navegador.  
-- Dados salvos: o motor original grava contas em arquivos locais do perfil do usuario;  
+**Instalação no Zorin OS / Ubuntu / Linux (sem Docker)**  
+1. Instale o [SDK .NET 8.](https://dotnet.microsoft.com/download/dotnet/8.0 "https://dotnet.microsoft.com/download/dotnet/8.0")  
+2. [Baixe o projeto completo e extraia o ZIP.](https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip "https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip")  
+3. Abra um terminal na raiz da pasta extraída.  
+4. Execute:  
+5. bash iniciar-web-linux.sh  
    
- trate a pasta como confidencial.  
-- O servidor escuta APENAS em 127.0.0.1 para evitar acesso indevido pela rede.  
+6. Acesse http://localhost:5078/ **no próprio computador**.  
+Para iniciar manualmente na raiz do repositório:  
+dotnet restore Web/IPTVDownloader.Web.csproj  
+ dotnet run --project Web/IPTVDownloader.Web.csproj --urls http://127.0.0.1:5078  
    
- Nao expose 0.0.0.0 / acesso publico sem adicionar autenticacao HTTPS segura.  
-- O app web nao substitui completamente todas as telas e funcoes Avalonia  
-   
- (por exemplo, player incorporado e historico nao estao nesta beta).  
-Utilize somente conteudos e listas para os quais voce tenha autorizacao.  
-   
-   
-   
- IPTV DOWNLOADER WEB 2.0.26 — PACOTE ZIMAOS / DOCKER (BETA)  
-   
-OBJETIVO  
-Voce cuida SOMENTE de permitir ao conteiner acesso a SSD/HD no ZimaOS.  
-O aplicativo recebe o caminho interno (ex: /storage), cria dentro dele  
-"IP Downloader" e organiza automaticamente os arquivos.  
-   
-EXEMPLO (SSD2 montado como /storage no conteiner):  
-/storage/IP Downloader/  
-  filmes/  
-    Nome do Filme.mkv  
-  series/  
-    Nome da Serie/  
-      Temporada 01/  
-        Episodio S01E01.mkv  
-   
-COMO CONFIGURAR  
-1. Extraia este ZIP em alguma pasta acessivel no servidor ZimaOS.  
-2. Veja no ZimaOS o CAMINHO REAL do seu SSD, por exemplo /media/SSD2.  
-3. No docker-compose.yml, troque SÓ esta linha:  
-      - /CAMINHO/DO/SSD2:/storage  
-   por:  
-      - /media/SSD2:/storage  
-   IMPORTANTE: /media/SSD2 e APENAS EXEMPLO. O caminho do seu sistema pode mudar.  
-   Se preferir, adicione esse mapeamento pelo painel do ZimaOS com destino  
-   interno /storage. O caminho escolhido no navegador e SEMPRE o caminho  
-   INTERNO do conteiner, por exemplo /storage, nunca o caminho do host.  
-4. Pelo terminal do servidor, na pasta deste projeto, execute:  
-      docker compose up -d --build  
-   Se o ZimaOS so aceitar YAML e nao conseguir construir imagem pelo painel,  
-   faca o build pelo terminal antes. O Dockerfile usa .NET 8 dentro da imagem.  
-5. Na rede local, abra no navegador:  
-      http://IP-DO-ZIMAOS:5078  
-6. Em "Downloads / Configuracoes", a pasta de destino deve ser /storage.  
-   O aplicativo cria /storage/IP Downloader/filmes e /series automaticamente.  
-7. Para outro SSD, voce pode mapear outro diretorio do ZimaOS no conteiner  
-   (por exemplo em /storage2), e selecionar /storage2 nas configuracoes.  
-   Para ficar tudo na mesma pasta central, selecione a unidade PAI.  
-   
-ATENCAO  
-- Nao e necessario instalar .NET no ZimaOS: o Dockerfile usa imagens .NET 8.  
-- O codigo original C# foi reaproveitado e continua ordenando episodios e  
-  baixando um arquivo de cada vez. Este pacote ainda NAO teve build .NET e  
-  download real testados neste ambiente. Trate-o como BETA.  
-- O painel web NAO TEM LOGIN PROPRIO. Nao exponha a porta 5078 a internet;  
-  use apenas rede local confiavel ou VPN segura, com acesso restrito.  
-- As credenciais IPTV ficam salvas em /appdata (volume iptv_dados).  
-- A pasta /storage deve ter permissoes de escrita para o processo Docker.  
-- Nunca monte a raiz completa do servidor (/). Compartilhe apenas o necessario.  
-- Para ver erros: docker compose logs -f iptv-downloader  
-- Para parar: docker compose down  
-- - Use somente listas e arquivos de midia a que voce tenha direito.  
+**Instalação no Windows (sem Docker)**  
+1. Instale o [SDK .NET 8.](https://dotnet.microsoft.com/download/dotnet/8.0 "https://dotnet.microsoft.com/download/dotnet/8.0")  
+2. Baixe e extraia o ZIP completo do projeto.  
+3. Execute iniciar-web-windows.bat na raiz extraída.  
+4. Acesse http://localhost:5078/ no navegador.  
+**Recursos disponíveis na beta**  
+- Conexão Xtream com servidor, usuário e senha, com opção de lembrar a conta.  
+- Catálogo de filmes, séries, temporadas e episódios.  
+- Busca sem diferenciar acentos, filtros por categoria, índice alfabético e paginação.  
+- Fila para filmes, episódios, temporadas e séries inteiras.  
+- Motor de download original em C#: um download por vez, progresso e velocidade, pausar, continuar e cancelar o atual.  
+- Nomes de arquivos sem acentos, seguindo o motor C#.  
+- Escolha da pasta pai de download e filtro de conteúdo adulto.  
+**Limitações e segurança**  
+- É uma **versão beta**; o funcionamento completo de todos os fluxos com contas IPTV reais não foi validado aqui.  
+- A fila e os downloads em andamento não são recuperados automaticamente após reiniciar o servidor.  
+- O app web ainda não reproduz todas as telas da versão Avalonia, como o player incorporado.  
+- **A interface web não possui login próprio.** Não encaminhe a porta 5078 para a internet; use rede local confiável ou acesso por VPN protegida.  
+- No Docker, a aplicação escuta em 0.0.0.0:5078 dentro do contêiner para que a rede do ZimaOS consiga acessá-la. Nas instalações locais pelos scripts, o endereço sugerido é localhost.  
+- Não monte a raiz / do servidor no contêiner; conceda acesso apenas às pastas necessárias.  
+- Utilize somente conteúdo e listas IPTV para os quais tenha direito de acesso.  
+![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAnEAAAACCAYAAAA3pIp+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAANklEQVR4nO3OQQmAABRAsScYxpg/h5VMYARvRrCCNxG2BFtmZquOAAD4i3Ot7mr/egIAwGvXA224BcUMk6pDAAAAAElFTkSuQmCC)  
+**Projeto:** [lucassfontes/IPTV_Downloader ·  **Versão:** 2.0.26 Beta ·  **Backend:** C# / .NET 8 ·  **Interface:** Web](https://github.com/lucassfontes/IPTV_Downloader "https://github.com/lucassfontes/IPTV_Downloader")  
