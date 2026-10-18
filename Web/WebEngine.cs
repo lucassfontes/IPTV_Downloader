@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text.Json;
 using IPTVDownloader.Infrastructure;
 using IPTVDownloader.Models;
 using IPTVDownloader.Services;
@@ -56,6 +58,172 @@ public sealed class WebEngine
             StringComparison.OrdinalIgnoreCase) ? parent : Path.Combine(parent, folder);
     }
 
+    private string QueuePath => Path.Combine(_store.Paths.Data, "download-queue.json");
+    private void SaveQueue()
+    {
+        using (var stream = new FileStream(QueuePath + ".tmp", FileMode.Create, FileAccess.Write))
+        {
+            JsonSerializer.Serialize(stream, _jobs);
+            stream.Flush(true);
+        }
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(QueuePath + ".tmp", UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        File.Move(QueuePath + ".tmp", QueuePath, true);
+    }
+    private void StartWorker()
+    {
+        if (!_workerRunning && _pending.Count > 0)
+        {
+            _workerRunning = true;
+            _ = Task.Run(WorkerAsync);
+        }
+    }
+    public Task StartAsync() => InitializeAsync();
+    public void ControlJob(string id, string action)
+    {
+        lock (_lock)
+        {
+            var job = _jobs.FirstOrDefault(j => j.Id == id) ?? throw new InvalidOperationException("Download não encontrado.");
+            if (action == "resume")
+            {
+                if (job.Status != "Pausado") throw new InvalidOperationException("Este download não está pausado.");
+                if (ReferenceEquals(job, _current)) { Resume(); job.Error = ""; }
+                else Retry(id, false);
+                return;
+            }
+            if (action is not ("pause" or "stop")) throw new InvalidOperationException("Ação inválida.");
+            if (job.Status is not ("Na fila" or "Baixando" or "Pausado"))
+                throw new InvalidOperationException("Este download não está ativo.");
+            if (ReferenceEquals(job, _current))
+            {
+                if (action == "pause") Pause();
+                else Cancel();
+                return;
+            }
+            var keep = _pending.Where(j => !ReferenceEquals(j, job)).ToArray();
+            _pending.Clear(); foreach (var item in keep) _pending.Enqueue(item);
+            _inQueue.Remove(job.Key);
+            job.Status = action == "pause" ? "Pausado" : "Cancelado";
+            job.Speed = 0;
+            SaveQueue();
+        }
+    }
+    public void Retry(string id, bool restart)
+    {
+        lock (_lock)
+        {
+            var job = _jobs.FirstOrDefault(j => j.Id == id) ?? throw new InvalidOperationException("Download não encontrado.");
+            if (job.Status is "Na fila" or "Baixando" || _inQueue.Contains(job.Key))
+                throw new InvalidOperationException("Este download já está ativo.");
+            if (job.Status == "Concluído") throw new InvalidOperationException("Download já concluído.");
+            if (restart) { DownloadService.RestartFile(DownloadService.OutputPath(job.Root, job.Item)); job.Connections = _settings.DownloadConnections; }
+            job.Status = "Na fila"; job.Error = ""; job.Speed = 0;
+            if (restart) { job.Bytes = 0; job.Progress = 0; }
+            SaveQueue();
+            _inQueue.Add(job.Key); _pending.Enqueue(job); StartWorker();
+        }
+    }
+    public object OpenDownloadFolder(string id)
+    {
+        string output;
+        lock (_lock)
+        {
+            var job = _jobs.FirstOrDefault(j => j.Id == id) ?? throw new InvalidOperationException("Download não encontrado.");
+            if (job.Status != "Concluído") throw new InvalidOperationException("A pasta pode ser aberta depois de concluir o download.");
+            output = DownloadService.OutputPath(job.Root, job.Item);
+        }
+        var targetDirectory = Path.GetDirectoryName(output);
+        if (string.IsNullOrWhiteSpace(targetDirectory) || !Directory.Exists(targetDirectory))
+            throw new InvalidOperationException("A pasta deste arquivo não foi encontrada.");
+
+        // Navegadores não podem abrir diretamente o gerenciador de arquivos do computador.
+        // Em um servidor Docker/ZimaOS, devolve o caminho para copiar em vez de alegar sucesso.
+        if (File.Exists("/.dockerenv") || Environment.GetEnvironmentVariable("container") is not null)
+            return new { opened = false, path = targetDirectory, message = "No Docker/ZimaOS, abra esta pasta pelo gerenciador de arquivos do servidor. Caminho disponível para copiar." };
+
+        try
+        {
+            ProcessStartInfo? info = null;
+            if (OperatingSystem.IsWindows())
+            {
+                info = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+                info.ArgumentList.Add(targetDirectory);
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")) &&
+                    string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+                    return new { opened = false, path = targetDirectory, message = "O aplicativo está sem sessão gráfica. Abra o caminho manualmente no gerenciador de arquivos." };
+                info = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
+                info.ArgumentList.Add(targetDirectory);
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                info = new ProcessStartInfo("open") { UseShellExecute = false };
+                info.ArgumentList.Add(targetDirectory);
+            }
+            else return new { opened = false, path = targetDirectory, message = "Sistema sem suporte à abertura automática de pastas." };
+            using var process = Process.Start(info);
+            if (process is null) throw new InvalidOperationException("Falha ao iniciar o gerenciador de arquivos.");
+            if (process.WaitForExit(800) && process.ExitCode != 0)
+                throw new InvalidOperationException("O gerenciador de arquivos não conseguiu abrir a pasta.");
+            return new { opened = true, path = targetDirectory, message = "Pasta aberta." };
+        }
+        catch (Exception)
+        {
+            return new { opened = false, path = targetDirectory, message = "Não foi possível abrir a pasta automaticamente. Copie o caminho para abri-la manualmente." };
+        }
+    }
+    public void DeleteDownload(string id)
+    {
+        lock (_lock)
+        {
+            var job = _jobs.FirstOrDefault(j => j.Id == id) ?? throw new InvalidOperationException("Download não encontrado.");
+            if (ReferenceEquals(job, _current) || _inQueue.Contains(job.Key) || job.Status is "Baixando" or "Na fila" or "Pausado")
+                throw new InvalidOperationException("Não é possível excluir um download que ainda está ativo.");
+
+            var output = DownloadService.OutputPath(job.Root, job.Item);
+            DeleteOutputArtifacts(output, job.Root);
+            _jobs.Remove(job);
+            SaveQueue();
+        }
+    }
+
+    private static void DeleteOutputArtifacts(string output, string root)
+    {
+        foreach (var suffix in new[] { "", ".part", ".merge", ".resume.json", ".verified.json" })
+        {
+            var path = output + suffix;
+            if (File.Exists(path)) File.Delete(path);
+        }
+
+        var segments = output + ".segments";
+        if (Directory.Exists(segments)) Directory.Delete(segments, true);
+
+        var directory = Path.GetDirectoryName(output);
+        var stopRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        while (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+        {
+            var current = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (string.Equals(current, stopRoot, StringComparison.OrdinalIgnoreCase)) break;
+            if (Directory.EnumerateFileSystemEntries(directory).Any()) break;
+            Directory.Delete(directory);
+            directory = Path.GetDirectoryName(directory);
+        }
+    }
+    // Limpa apenas recibos de arquivos que a fila já marcou como concluídos.
+    // Não toca em recibos de downloads interrompidos, usados na recuperação.
+    private static void CleanCompletedReceipt(DownloadJob job)
+    {
+        if (job.Status != "Concluído") return;
+        var output = DownloadService.OutputPath(job.Root, job.Item);
+        if (!File.Exists(output)) return;
+        var receipt = output + ".verified.json";
+        if (!File.Exists(receipt)) return;
+        try { File.Delete(receipt); }
+        catch (IOException) { /* Tentar novamente na próxima inicialização. */ }
+        catch (UnauthorizedAccessException) { /* Não comprometer a fila por uma falha de limpeza. */ }
+    }
+
     private async Task InitializeAsync()
     {
         if (_initialized) return;
@@ -65,7 +233,46 @@ public sealed class WebEngine
             if (_initialized) return;
             _saved = await _store.LoadAccountsAsync();
             _settings = await _store.LoadSettingsAsync();
-            _initialized = true;
+            lock (_lock)
+            {
+                if (File.Exists(QueuePath))
+                {
+                    var restored = JsonSerializer.Deserialize<List<DownloadJob>>(File.ReadAllText(QueuePath))
+                        ?? throw new IOException("Fila salva inválida; arquivo preservado.");
+                    _jobs.AddRange(restored);
+                    foreach (var job in restored.AsEnumerable().Reverse())
+                    {
+                        if (string.IsNullOrEmpty(job.Root)) job.Root = ResolveRoot();
+                        job.Speed = 0;
+                        var segmented = DownloadService.SegmentedProgress(DownloadService.OutputPath(job.Root, job.Item));
+                        if (segmented.Total > 0)
+                        { job.Bytes = segmented.Bytes; job.TotalBytes = segmented.Total; job.Progress = Math.Clamp(job.Bytes / (double)job.TotalBytes, 0, 1); }
+                        var partial = DownloadService.OutputPath(job.Root, job.Item) + ".part";
+                        if (File.Exists(partial))
+                        {
+                            job.Bytes = new FileInfo(partial).Length;
+                            var metadataPath = DownloadService.OutputPath(job.Root, job.Item) + ".resume.json";
+                            if (File.Exists(metadataPath))
+                            {
+                                try
+                                {
+                                    using var metadata = JsonDocument.Parse(File.ReadAllText(metadataPath));
+                                    if (metadata.RootElement.TryGetProperty("Total", out var total)) job.TotalBytes = total.GetInt64();
+                                }
+                                catch (JsonException) { /* Transfer validates metadata before resuming. */ }
+                            }
+                            job.Progress = job.TotalBytes > 0 ? Math.Clamp(job.Bytes / (double)job.TotalBytes, 0, 1) : 0;
+                        }
+                        CleanCompletedReceipt(job);
+                        if (job.Status is "Baixando" or "Na fila")
+                        { job.Status = "Na fila"; _inQueue.Add(job.Key); _pending.Enqueue(job); }
+                        else if (job.Status == "Pausado")
+                        { job.Error = "Download pausado. Use Continuar quando desejar."; }
+                    }
+                }
+                _initialized = true;
+                StartWorker();
+            }
         }
         finally { _initLock.Release(); }
     }
@@ -83,7 +290,8 @@ public sealed class WebEngine
                 downloadParent = ResolveParent(),
                 downloadRoot = ResolveRoot(),
                 hideAdult = _settings.HideXxxContent,
-                version = "2.0.26-web-beta"
+                downloadConnections = _settings.DownloadConnections,
+                version = "2.0.36-web-beta"
             };
         }
     }
@@ -220,21 +428,20 @@ public sealed class WebEngine
         var added = 0;
         lock (_lock)
         {
-            foreach (var item in expanded.DistinctBy(i => i.Identity))
+            foreach (var item in expanded.DistinctBy(i => i.Identity)
+                .GroupBy(i => i.IsEpisode ? "series:" + i.SeriesId : i.Identity)
+                .SelectMany(group => group.OrderBy(i => i.Season).ThenBy(i => i.IsEpisode && i.EpisodeNumber <= 0 ? int.MaxValue : i.EpisodeNumber)))
             {
                 // Conta com IP/usuário diferente deve ser uma fila diferente.
                 var jobKey = $"{account.Server}\n{account.Username}\n{item.Identity}";
                 if (!_inQueue.Add(jobKey)) continue;
-                var job = new DownloadJob { Key = jobKey, Name = item.Name, Item = item, Account = account };
+                var job = new DownloadJob { Key = jobKey, Name = item.Name, Item = item, Account = account, Root = ResolveRoot(), Connections = _settings.DownloadConnections };
                 _jobs.Insert(0, job);
                 _pending.Enqueue(job);
                 added++;
             }
-            if (!_workerRunning && _pending.Count > 0)
-            {
-                _workerRunning = true;
-                _ = Task.Run(WorkerAsync);
-            }
+            SaveQueue();
+            StartWorker();
         }
         return added;
     }
@@ -266,7 +473,7 @@ public sealed class WebEngine
             }
             try
             {
-                var root = ResolveRoot();
+                var root = job.Root;
                 var progress = new Progress<DownloadProgress>(p =>
                 {
                     lock (_lock)
@@ -276,24 +483,51 @@ public sealed class WebEngine
                         job.Speed = p.BytesPerSecond;
                         job.Bytes = p.FileBytesDownloaded;
                         job.TotalBytes = p.FileBytesTotal;
+                        job.Detail = p.Status;
                     }
                 });
-                await _downloader.DownloadBatchAsync([job.Item], job.Account, root, progress, pauseGate: pause, ct: cancel.Token);
-                lock (_lock) { job.Status = "Concluído"; job.Progress = 1; }
+                await _downloader.DownloadBatchAsync([job.Item], job.Account, root, progress, pauseGate: pause, ct: cancel.Token, connections: job.Connections);
+                lock (_lock)
+                {
+                    job.Status = "Concluído"; job.Progress = 1; job.Error = "";
+                    job.Bytes = job.TotalBytes = new FileInfo(DownloadService.OutputPath(root, job.Item)).Length;
+                    CleanCompletedReceipt(job);
+                }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested)
             {
                 lock (_lock) job.Status = "Cancelado";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                lock (_lock) job.Status = "Erro";
+                lock (_lock)
+                {
+                    job.Status = "Erro";
+                    job.Error = ex is DownloadService.DownloadProblem ? ex.Message
+                        : "Transferência interrompida. Verifique a rede e o espaço disponível e tente novamente.";
+                }
                 // Não expor as URLs de download, que podem conter usuário/senha.
             }
             finally
             {
                 lock (_lock)
                 {
+                    job.Speed = 0;
+                    try
+                    {
+                        var segmented = DownloadService.SegmentedProgress(DownloadService.OutputPath(job.Root, job.Item));
+                        if (segmented.Total > 0)
+                        { job.Bytes = segmented.Bytes; job.TotalBytes = segmented.Total; job.Progress = Math.Clamp(job.Bytes / (double)job.TotalBytes, 0, 1); }
+                        var partial = DownloadService.OutputPath(job.Root, job.Item) + ".part";
+                        if (File.Exists(partial))
+                        {
+                            job.Bytes = new FileInfo(partial).Length;
+                            job.Progress = job.TotalBytes > 0 ? Math.Clamp(job.Bytes / (double)job.TotalBytes, 0, 1) : 0;
+                        }
+                    }
+                    catch (IOException) { /* Preserve the latest measured progress. */ }
+                    try { SaveQueue(); }
+                    catch { job.Status = "Erro"; job.Error = "Não foi possível salvar a fila. Verifique o armazenamento do servidor."; }
                     _inQueue.Remove(job.Key);
                     if (ReferenceEquals(_current, job)) _current = null;
                     if (ReferenceEquals(_cancel, cancel)) _cancel = null;
@@ -313,15 +547,21 @@ public sealed class WebEngine
                 paused = _pause?.IsPaused ?? false,
                 pending = _pending.Count,
                 working = _current != null,
-                jobs = _jobs.Take(200).Select(j => new
+                currentId = _current?.Id,
+                jobs = (_current is null ? Enumerable.Empty<DownloadJob>() : new[] { _current })
+                    .Concat(_pending).Concat(_jobs).DistinctBy(j => j.Id).Select(j => new
                 {
                     id = j.Id,
                     name = j.Name,
+                    logo = j.Item.Logo,
                     status = j.Status,
                     progress = j.Progress,
                     speed = j.Speed,
                     bytes = j.Bytes,
-                    totalBytes = j.TotalBytes
+                    totalBytes = j.TotalBytes,
+                    error = j.Error,
+                    detail = j.Detail,
+                    connections = j.Connections
                 }).ToList()
             };
         }
@@ -332,7 +572,7 @@ public sealed class WebEngine
         lock (_lock)
         {
             _pause?.Pause();
-            if (_current is not null && _pause is not null) _current.Status = "Pausado";
+            if (_current is not null && _pause is not null) { _current.Status = "Pausado"; SaveQueue(); }
         }
     }
     public void Resume()
@@ -340,7 +580,7 @@ public sealed class WebEngine
         lock (_lock)
         {
             _pause?.Resume();
-            if (_current is not null) _current.Status = "Baixando";
+            if (_current is not null) { _current.Status = "Baixando"; SaveQueue(); }
         }
     }
     public void Cancel()
@@ -361,17 +601,27 @@ public sealed class WebEngine
             if (string.IsNullOrWhiteSpace(dir)) throw new InvalidOperationException("Pasta vazia");
             _settings.DownloadParent = Path.GetFullPath(Environment.ExpandEnvironmentVariables(dir.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))));
         }
+        if (req.DownloadConnections.HasValue)
+        {
+            if (req.DownloadConnections.Value is not (1 or 2 or 4 or 8 or 16))
+                throw new InvalidOperationException("Escolha 1, 2, 4, 8 ou 16 conexões.");
+            _settings.DownloadConnections = req.DownloadConnections.Value;
+        }
         if (req.HideAdult.HasValue) _settings.HideXxxContent = req.HideAdult.Value;
         await _store.SaveSettingsAsync(_settings);
     }
 
-    private sealed class DownloadJob
+    public sealed class DownloadJob
     {
-        public string Id { get; } = Guid.NewGuid().ToString("N");
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string Key { get; init; } = "";
         public string Name { get; init; } = "";
         public MediaItem Item { get; init; } = new();
         public XtreamAccount Account { get; init; } = new();
+        public int Connections { get; set; } = 1;
+        public string Detail { get; set; } = "";
+        public string Root { get; set; } = "";
+        public string Error { get; set; } = "";
         public string Status { get; set; } = "Na fila";
         public double Progress { get; set; }
         public double Speed { get; set; }

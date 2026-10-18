@@ -3,7 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>2.0.26-web-beta</Version>
+    <Version>2.0.28-web-beta</Version>
   </PropertyGroup>
   <ItemGroup>
     <!-- Motor do projeto 2.0.26 original, compilado diretamente, sem Avalonia. -->

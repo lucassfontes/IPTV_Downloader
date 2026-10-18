@@ -7,7 +7,7 @@ var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGet("/api/health", () => Results.Ok(new { ok = true, version = "2.0.26-web-beta", engine = "C# original" }));
+app.MapGet("/api/health", () => Results.Ok(new { ok = true, version = "2.0.36-web-beta", engine = "C# original" }));
 app.MapGet("/api/state", async (WebEngine e) => Results.Ok(await e.GetStateAsync()));
 app.MapPost("/api/connect", async (ConnectRequest req, WebEngine e) =>
 {
@@ -51,15 +51,44 @@ app.MapGet("/api/downloads", (WebEngine e) => Results.Ok(e.DownloadState()));
 app.MapPost("/api/downloads/pause", (WebEngine e) => { e.Pause(); return Results.Ok(e.DownloadState()); });
 app.MapPost("/api/downloads/resume", (WebEngine e) => { e.Resume(); return Results.Ok(e.DownloadState()); });
 app.MapPost("/api/downloads/cancel", (WebEngine e) => { e.Cancel(); return Results.Ok(e.DownloadState()); });
+app.MapPost("/api/downloads/{id}/retry", (string id, RetryRequest req, WebEngine e) =>
+{
+    try { e.Retry(id, req.Restart); return Results.Ok(e.DownloadState()); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch { return Results.BadRequest(new { error = "Não foi possível preparar a retomada. Verifique o armazenamento." }); }
+});
+app.MapPost("/api/downloads/{id}/control", (string id, JobControlRequest req, WebEngine e) =>
+{
+    try { e.ControlJob(id, req.Action); return Results.Ok(e.DownloadState()); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch { return Results.BadRequest(new { error = "Não foi possível alterar o download. Verifique o armazenamento." }); }
+});
+app.MapPost("/api/downloads/{id}/open-folder", (string id, WebEngine e) =>
+{
+    try { return Results.Ok(e.OpenDownloadFolder(id)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch { return Results.BadRequest(new { error = "Não foi possível abrir a pasta do arquivo." }); }
+});
+app.MapPost("/api/downloads/{id}/delete", (string id, WebEngine e) =>
+{
+    try { e.DeleteDownload(id); return Results.Ok(e.DownloadState()); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch { return Results.BadRequest(new { error = "Não foi possível excluir o arquivo." }); }
+});
 app.MapPost("/api/settings", async (SettingsRequest req, WebEngine e) =>
 {
     try { await e.SaveSettingsAsync(req); return Results.Ok(new { ok = true }); }
     catch { return Results.BadRequest(new { error = "Não foi possível salvar as configurações." }); }
 });
 app.MapFallbackToFile("index.html");
+await app.Services.GetRequiredService<WebEngine>().StartAsync();
 app.Run();
 
 public sealed record ConnectRequest(string Server, string Username, string Password, bool Remember = false);
 public sealed record SavedRequest(string Key);
 public sealed record QueueRequest(List<string>? Keys);
-public sealed record SettingsRequest(string? DownloadParent, bool? HideAdult);
+public sealed record SettingsRequest(string? DownloadParent, bool? HideAdult, int? DownloadConnections = null);
+
+public sealed record RetryRequest(bool Restart = false);
+
+public sealed record JobControlRequest(string Action);

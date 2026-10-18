@@ -1,4 +1,4 @@
-/* IPTV Downloader 2.0.26 — interface web; o download permanece no C# do projeto original. */
+/* IPTV Downloader 2.0.28 — interface web; o download permanece no C# do projeto original. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -6,7 +6,7 @@
   const state = {
     connected: false, kind: 'movies', path: { level: 'catalog', seriesId: '', seriesName: '', season: 0 },
     lists: { movies: null, series: null }, current: [], selected: new Set(),
-    page: 1, letter: '', searching: false, loading: false, jobsVisible: false,
+    page: 1, letter: '', searching: false, loading: false, jobsVisible: true,
     search: '', category: '', seq: 0, poll: null
   };
   const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
@@ -16,6 +16,32 @@
   const speed = num => num ? `${bytes(num)}/s` : '—';
   const safeImage = src => { try { const u = new URL(src); return (u.protocol === 'https:' || u.protocol === 'http:') ? u.href : null; } catch { return null; } };
   const toast = (msg, error = false) => { const x = $('toast'); x.textContent = msg; x.classList.toggle('error', error); x.classList.add('visible'); clearTimeout(toast.timer); toast.timer = setTimeout(() => x.classList.remove('visible'), 5200); };
+  let dialogResolver = null;
+  let previousFocus = null;
+  function closeAppDialog(result) {
+    const overlay = $('appDialog');
+    overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden', 'true');
+    const resolve = dialogResolver; dialogResolver = null;
+    if (previousFocus?.isConnected) previousFocus.focus();
+    previousFocus = null;
+    if (resolve) resolve(result);
+  }
+  function appDialog(message, { title = 'Confirmação', confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', danger = false, path = '' } = {}) {
+    if (dialogResolver) closeAppDialog(false);
+    previousFocus = document.activeElement;
+    $('dialogTitle').textContent = title;
+    $('dialogMessage').textContent = message;
+    $('dialogPathArea').classList.toggle('hidden', !path);
+    $('dialogPath').value = path;
+    $('dialogCancel').textContent = cancelLabel;
+    $('dialogCancel').classList.toggle('hidden', Boolean(path));
+    $('dialogOk').textContent = path ? 'Fechar' : confirmLabel;
+    $('dialogOk').classList.toggle('danger', danger);
+    $('dialogSymbol').textContent = danger ? '!' : path ? '📁' : '?';
+    $('appDialog').classList.remove('hidden'); $('appDialog').setAttribute('aria-hidden', 'false');
+    $('dialogOk').focus();
+    return new Promise(resolve => { dialogResolver = resolve; });
+  }
   const request = async (path, data, method = 'GET') => {
     const opt = { method, headers: { 'Accept': 'application/json' } };
     if (data !== undefined) { opt.method = 'POST'; opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(data); }
@@ -28,8 +54,20 @@
   };
   function setBusy(value, message) {
     state.loading = value;
-    if (value && message) empty(message, 'Carregando');
+    if (value && message) showLoading(message);
     for (const id of ['connectButton', 'connectSaved', 'refreshCatalog']) $(id).disabled = value;
+  }
+  function showLoading(message) {
+    const wrapper = el('div', 'loading-state');
+    wrapper.setAttribute('role', 'status');
+    wrapper.setAttribute('aria-live', 'polite');
+    const spinner = el('div', 'loading-spinner'); spinner.setAttribute('aria-hidden', 'true');
+    const text = el('strong', 'loading-heading', message || 'Carregando conteúdo…');
+    const subtitle = el('span', 'loading-subtitle', 'Aguarde enquanto buscamos os itens da sua biblioteca.');
+    const tracks = el('div', 'loading-track');
+    for (let i = 0; i < 3; i++) tracks.append(el('span', 'loading-shimmer'));
+    wrapper.append(spinner, text, subtitle, tracks);
+    $('cards').replaceChildren(wrapper);
   }
   function empty(text, title = 'Nenhum item encontrado') {
     const box = el('div', 'empty'); box.append(el('div', 'empty-symbol', '▣'), el('strong', '', title), el('p', '', text));
@@ -43,13 +81,14 @@
     $('accountStatus').lastChild.textContent = ` ${state.connected ? `Conectado · ${r.account}` : 'Desconectado'}`;
     $('downloadParent').value = r.downloadParent || '';
     $('hideAdult').checked = r.hideAdult !== false;
-    $('outputPath').textContent = `Destino: ${r.downloadRoot || 'pasta padrão'}. As subpastas de filmes, séries e temporadas são criadas automaticamente no servidor.`;
+    $('downloadConnections').value = String(r.downloadConnections || 1);
+    $('outputPath').textContent = `Destino atual: ${r.downloadRoot || 'pasta padrão'}. As subpastas de filmes, séries e temporadas são criadas automaticamente.`;
     const select = $('savedAccounts'); const previous = select.value;
     select.replaceChildren(el('option', '', r.savedAccounts?.length ? 'Selecione uma conta' : 'Nenhuma conta salva'));
     select.firstChild.value = '';
     for (const key of r.savedAccounts || []) { const item = el('option', '', key); item.value = key; select.append(item); }
     if (r.savedAccounts?.includes(previous)) select.value = previous;
-    if (state.connected) $('toggleConfig').textContent = $('configPanel').classList.contains('hidden') ? 'Mostrar configurações' : 'Ocultar configurações';
+
   }
   function categories() {
     const selector = $('category');
@@ -84,7 +123,7 @@
     if (src) { const img = el('img'); img.src = src; img.loading = 'lazy'; img.alt = ''; img.referrerPolicy = 'no-referrer'; img.onerror = () => { cover.replaceChildren(el('span', '', '▣')); }; cover.append(img); }
     else cover.textContent = '▣';
     const main = el('div', 'card-content');
-    const name = el('h3', 'card-name', `${idx + 1}. ${item.name || 'Sem título'}`);
+    const name = el('h3', 'card-name', item.name || 'Sem título');
     const tags = [item.group, item.year, item.rating ? `★ ${item.rating}` : '', item.genre].filter(Boolean);
     main.append(name, el('div', 'card-meta', tags.join('  ·  ')));
     if (item.plot) main.append(el('div', 'card-plot', item.plot));
@@ -99,12 +138,37 @@
     queue.type = 'button'; queue.onclick = () => enqueue([item.id]); actions.append(queue);
     const sel = el('button', 'btn', state.selected.has(item.id) ? '✓ Selecionado' : 'Selecionar');
     sel.type = 'button'; sel.setAttribute('aria-pressed', state.selected.has(item.id));
-    sel.onclick = () => { state.selected.has(item.id) ? state.selected.delete(item.id) : state.selected.add(item.id); updateSelection(); card.classList.toggle('selected', state.selected.has(item.id)); sel.textContent = state.selected.has(item.id) ? '✓ Selecionado' : 'Selecionar'; sel.setAttribute('aria-pressed', state.selected.has(item.id)); };
+    const toggleSelection = () => {
+      state.selected.has(item.id) ? state.selected.delete(item.id) : state.selected.add(item.id);
+      updateSelection();
+      const selected = state.selected.has(item.id);
+      card.classList.toggle('selected', selected);
+      sel.textContent = selected ? '✓ Selecionado' : 'Selecionar';
+      sel.setAttribute('aria-pressed', selected);
+      if (!isFolder) card.setAttribute('aria-selected', selected);
+    };
+    sel.onclick = toggleSelection;
+    const activateCard = () => isFolder ? openFolder(item) : toggleSelection();
+    card.tabIndex = 0;
+    card.setAttribute('aria-label', isFolder ? `Abrir ${item.name}` : `Selecionar ${item.name}`);
+    card.addEventListener('click', event => {
+      if (event.target.closest('button, input, select, a')) return;
+      activateCard();
+    });
+    card.addEventListener('keydown', event => {
+      if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault(); activateCard();
+    });
     actions.append(sel); card.append(cover, main, actions); return card;
   }
   function render() {
     $('moviesTab').classList.toggle('active', state.kind === 'movies'); $('seriesTab').classList.toggle('active', state.kind === 'series');
     $('back').disabled = state.path.level === 'catalog';
+    $('breadcrumb').textContent = state.path.level === 'catalog' ? (state.kind === 'series' ? 'Séries' : 'Filmes')
+      : `${state.path.seriesName} / ${state.path.level === 'episodes' ? 'Temporada ' + state.path.season + ' / Episódios' : 'Temporadas'}`;
+    const browseFolder = state.path.level !== 'catalog';
+    $('alphabet').classList.toggle('hidden', browseFolder);
+    $('category').disabled = browseFolder;
     const filtered = currentFiltered(), pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     state.page = Math.min(Math.max(1, state.page), pages);
     const start = (state.page - 1) * PAGE_SIZE;
@@ -139,7 +203,7 @@
         state.path = { level: 'seasons', seriesId: item.seriesId, seriesName: item.name, season: 0 };
       } else {
         items = await request(`/api/series/${encodeURIComponent(item.seriesId)}/season/${item.season}`);
-        items.sort((a, b) => (Number(a.episode) || 0) - (Number(b.episode) || 0) || String(a.name).localeCompare(String(b.name), 'pt-BR', { numeric: true }));
+        items.sort((a, b) => (Number(a.episode) > 0 ? Number(a.episode) : Number.MAX_SAFE_INTEGER) - (Number(b.episode) > 0 ? Number(b.episode) : Number.MAX_SAFE_INTEGER) || String(a.name).localeCompare(String(b.name), 'pt-BR', { numeric: true }));
         state.path = { level: 'episodes', seriesId: item.seriesId, seriesName: prev.seriesName, season: item.season };
       }
       state.current = items; categories(); render();
@@ -161,12 +225,28 @@
     catch (e) { toast(e.message, true); }
   }
   function updateSelection() { $('selectionCount').textContent = `(${state.selected.size})`; $('downloadSelected').disabled = !state.selected.size; }
+  async function openDownloadFolder(id, button) {
+    button.disabled = true;
+    try { const result = await request(`/api/downloads/${encodeURIComponent(id)}/open-folder`, {}); if (result.opened) toast('Pasta aberta no computador.'); else { toast(result.message || 'Não foi possível abrir a pasta neste dispositivo.', true); if (result.path) { try { await navigator.clipboard.writeText(result.path); toast('Caminho da pasta copiado para a área de transferência.'); } catch { await appDialog('Não foi possível copiar automaticamente. Copie o caminho abaixo.', { title: 'Pasta do download', path: result.path }); } } } }
+    catch (e) { toast(e.message, true); button.disabled = false; return; }
+    button.disabled = false;
+  }
+  async function deleteDownloadItem(id, button) {
+    if (!await appDialog('Excluir o arquivo baixado e remover este item da lista?', { title: 'Excluir download', confirmLabel: 'Excluir', danger: true })) return;
+    button.disabled = true;
+    try { await request(`/api/downloads/${encodeURIComponent(id)}/delete`, {}); toast('Arquivo removido.'); await pollDownloads(); }
+    catch (e) { toast(e.message, true); button.disabled = false; }
+  }
   let dataPaused = false;
   function renderJobs(data) {
     dataPaused = Boolean(data.paused);
     const jobs = data.jobs || [];
-    const active = jobs.find(j => j.status === 'Baixando' || j.status === 'Pausado');
+    const active = jobs.find(j => j.id === data.currentId);
     const pending = Number(data.pending || 0);
+    const remaining = jobs.filter(j => !['Concluído', 'Cancelado'].includes(j.status)).length;
+    $('downloadBadge').textContent = remaining;
+    $('downloadBadge').hidden = remaining === 0;
+    $('viewDownloads').setAttribute('aria-label', `Downloads: ${remaining} pendentes`);
     $('jobSummary').textContent = `${pending} na fila · ${jobs.filter(j => j.status === 'Concluído').length} concluído(s)`;
     $('pauseDownload').textContent = data.paused ? 'Continuar' : 'Pausar';
     $('pauseDownload').disabled = !active;
@@ -176,30 +256,122 @@
     $('progressBar').style.width = `${active ? fraction * 100 : last?.status === 'Concluído' ? 100 : 0}%`;
     $('progressBar').classList.toggle('finished', !active && last?.status === 'Concluído');
     $('currentStatus').textContent = active ? `${active.name} · ${Math.round(fraction * 100)}% · ${bytes(active.bytes)}${active.totalBytes ? ` / ${bytes(active.totalBytes)}` : ''}` : last ? `${last.name} · ${last.status}` : 'Nenhum download iniciado';
-    $('currentSpeed').textContent = active ? speed(active.speed) : '—';
+    $('currentSpeed').textContent = active ? `${speed(active.speed)}${active.speed > 0 && active.totalBytes > active.bytes ? ' · ' + Math.ceil((active.totalBytes - active.bytes) / active.speed / 60) + ' min restantes' : ''}` : '—';
     if (!state.jobsVisible) return;
     const box = $('jobs'); box.replaceChildren();
     if (!jobs.length) box.append(el('p', 'hint', 'Nenhum download nesta sessão.'));
     for (const item of jobs) {
-      const row = el('div', `job ${item.status === 'Concluído' ? 'completed' : item.status === 'Erro' ? 'error' : ''}`);
+      const row = el('div', 'job'); row.dataset.status = item.status;
+      const cover = safeImage(item.logo);
+      if (cover) {
+        const poster = el('img', 'job-poster'); poster.src = cover; poster.alt = ''; poster.loading = 'lazy'; poster.referrerPolicy = 'no-referrer';
+        poster.onerror = () => poster.remove(); row.append(poster);
+      }
       const name = el('span', '', item.name); name.title = item.name;
-      row.append(name, el('span', '', `${item.status} · ${Math.round((item.progress || 0) * 100)}%`)); box.append(row);
+      const detail = el('div', 'job-detail');
+      detail.append(name, el('span', 'hint', `${item.status === 'Cancelado' ? 'Parado' : item.status} · ${Math.round((item.progress || 0) * 100)}% · ${bytes(item.bytes)}${item.totalBytes ? ' / ' + bytes(item.totalBytes) : ''}`));
+      if (item.detail && ['Baixando', 'Pausado'].includes(item.status)) detail.append(el('span', 'hint', item.detail));
+      if (item.error) detail.append(el('p', 'job-error', item.error));
+      const bar = el('progress', 'job-progress'); bar.max = 1; bar.value = item.progress || 0;
+      bar.setAttribute('aria-label', `Progresso de ${item.name}: ${item.status}`);
+      detail.append(bar); row.append(detail);
+      if (['Baixando', 'Na fila', 'Pausado'].includes(item.status)) {
+        const controls = el('div', 'job-actions');
+        for (const action of [item.status === 'Pausado' ? 'resume' : 'pause', 'stop']) {
+          const label = { pause: 'Pausar', resume: 'Continuar', stop: 'Parar' }[action];
+          const button = el('button', 'btn', label);
+          button.onclick = async () => {
+            if (action === 'stop' && !await appDialog('Parar este download? O arquivo parcial será preservado.', { title: 'Parar download', confirmLabel: 'Parar', danger: true })) return;
+            button.disabled = true;
+            try { await request(`/api/downloads/${encodeURIComponent(item.id)}/control`, { action }); await pollDownloads(); }
+            catch (e) { toast(e.message, true); button.disabled = false; }
+          };
+          controls.append(button);
+        }
+        row.append(controls);
+      }
+      if (['Erro', 'Cancelado', 'Interrompido'].includes(item.status)) {
+        const actions = el('div', 'job-actions');
+        for (const restart of [false, true]) {
+          const button = el('button', 'btn', restart ? 'Reiniciar download' : 'Tentar novamente');
+          button.onclick = async () => {
+            if (restart && !await appDialog('Reiniciar do zero? O arquivo anterior será guardado como backup e ocupará espaço.', { title: 'Reiniciar download', confirmLabel: 'Reiniciar', danger: true })) return;
+            button.disabled = true;
+            try { await request(`/api/downloads/${encodeURIComponent(item.id)}/retry`, { restart }); await pollDownloads(); }
+            catch (e) { toast(e.message, true); button.disabled = false; }
+          };
+          actions.append(button);
+        }
+        const deleteButton = el('button', 'btn warn', 'Excluir');
+        deleteButton.onclick = async () => deleteDownloadItem(item.id, deleteButton);
+        actions.append(deleteButton);
+        row.append(actions);
+      }
+      if (item.status === 'Concluído') {
+        const doneActions = el('div', 'job-actions');
+        const openButton = el('button', 'btn', 'Ver pasta');
+        openButton.onclick = async () => openDownloadFolder(item.id, openButton);
+        const deleteButton = el('button', 'btn warn', 'Excluir');
+        deleteButton.onclick = async () => deleteDownloadItem(item.id, deleteButton);
+        doneActions.append(openButton, deleteButton);
+        row.append(doneActions);
+      }
+      box.append(row);
     }
   }
   async function pollDownloads() { try { renderJobs(await request('/api/downloads')); } catch (e) { if (!pollDownloads.offline) toast(e.message, true); pollDownloads.offline = true; return; } pollDownloads.offline = false; }
   function on(id, event, fn) { $(id).addEventListener(event, fn); }
+  function showView(view) {
+    $('configPanel').classList.toggle('hidden', view !== 'config');
+    document.querySelector('.toolbar').classList.toggle('hidden', view !== 'catalog');
+    document.body.classList.toggle('view-downloads', view === 'downloads');
+    $('workspaceTabs').classList.toggle('hidden', view === 'config');
+    $('viewDownloads').classList.toggle('active', view === 'downloads');
+    $('moviesTab').classList.toggle('active', view === 'catalog' && state.kind === 'movies');
+    $('seriesTab').classList.toggle('active', view === 'catalog' && state.kind === 'series');
+    document.querySelector('.content-panel').classList.toggle('hidden', view !== 'catalog');
+    document.querySelector('.downloads-panel').classList.toggle('hidden', view !== 'downloads');
+    document.querySelectorAll('[data-view]').forEach(b => { b.classList.toggle('active', b.dataset.view === view); b.setAttribute('aria-current', b.dataset.view === view ? 'page' : 'false'); });
+  }
+  function setSidebarCollapsed(collapsed) {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    const toggle = $('sidebarToggle');
+    toggle.textContent = collapsed ? '›' : '‹';
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.title = collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral';
+    toggle.setAttribute('aria-label', toggle.title);
+    try { localStorage.setItem('iptv-sidebar-collapsed', String(collapsed)); } catch { /* optional preference */ }
+  }
   function wireEvents() {
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('iptv-sidebar-collapsed') === 'true'; } catch { }
+    setSidebarCollapsed(collapsed);
+    on('sidebarToggle', 'click', () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed')));
+    on('dialogCancel', 'click', () => closeAppDialog(false));
+    on('dialogOk', 'click', () => closeAppDialog(true));
+    on('dialogCopy', 'click', async () => {
+      try { await navigator.clipboard.writeText($('dialogPath').value); toast('Caminho copiado.'); }
+      catch { $('dialogPath').focus(); $('dialogPath').select(); toast('Selecione e copie o caminho exibido.'); }
+    });
+    $('appDialog').addEventListener('click', e => { if (e.target === $('appDialog')) closeAppDialog(false); });
+    document.addEventListener('keydown', e => {
+      if (!$('appDialog').classList.contains('hidden')) {
+        if (e.key === 'Escape') { e.preventDefault(); closeAppDialog(false); }
+        if (e.key === 'Tab') { const nodes = [...$('appDialog').querySelectorAll('button:not(.hidden),input:not(.hidden)')].filter(n => n.offsetParent !== null); if (nodes.length) { const first = nodes[0], last = nodes[nodes.length-1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } } }
+      }
+    });
     document.querySelectorAll('[data-config]').forEach(button => button.addEventListener('click', () => {
       document.querySelectorAll('[data-config]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-selected', b === button ? 'true' : 'false'); });
       document.querySelectorAll('.tab-body').forEach(b => b.classList.toggle('hidden', b.id !== `config-${button.dataset.config}`));
     }));
-    on('toggleConfig', 'click', () => { const h = $('configPanel').classList.toggle('hidden'); $('toggleConfig').textContent = h ? 'Mostrar configurações' : 'Ocultar configurações'; });
+    on('viewDownloads', 'click', () => showView('downloads'));
+    document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => showView(b.dataset.view));
     on('connectForm', 'submit', async ev => {
       ev.preventDefault(); setBusy(true, 'Conectando à lista IPTV…');
       try {
         await request('/api/connect', { server: $('server').value.trim(), username: $('username').value.trim(), password: $('password').value, remember: $('remember').checked });
         $('password').value = ''; state.lists = { movies: null, series: null }; await refreshState();
-        $('configPanel').classList.add('hidden'); $('toggleConfig').textContent = 'Mostrar configurações';
+        showView('catalog');
         await loadCatalog('movies', true);
       } catch (e) { toast(e.message, true); empty(e.message, 'Falha na conexão'); }
       finally { setBusy(false); }
@@ -207,16 +379,18 @@
     on('connectSaved', 'click', async () => {
       const key = $('savedAccounts').value; if (!key) { toast('Selecione uma conta salva.', true); return; }
       setBusy(true, 'Conectando à conta salva…');
-      try { await request('/api/connect-saved', { key }); state.lists = { movies: null, series: null }; await refreshState(); $('configPanel').classList.add('hidden'); $('toggleConfig').textContent = 'Mostrar configurações'; await loadCatalog('movies', true); }
+      try { await request('/api/connect-saved', { key }); state.lists = { movies: null, series: null }; await refreshState(); showView('catalog'); await loadCatalog('movies', true); }
       catch (e) { toast(e.message, true); } finally { setBusy(false); }
     });
     on('refreshCatalog', 'click', () => loadCatalog(state.kind, true));
     on('settingsForm', 'submit', async ev => {
-      ev.preventDefault(); try { await request('/api/settings', { downloadParent: $('downloadParent').value, hideAdult: $('hideAdult').checked }); state.lists = { movies: null, series: null }; await refreshState(); toast('Configurações salvas.'); if (state.connected) await loadCatalog(state.kind, true); }
+      ev.preventDefault(); try { await request('/api/settings', { downloadParent: $('downloadParent').value, hideAdult: $('hideAdult').checked, downloadConnections: Number($('downloadConnections').value) }); state.lists = { movies: null, series: null }; await refreshState(); toast('Configurações salvas.'); if (state.connected) await loadCatalog(state.kind, true); }
       catch (e) { toast(e.message, true); }
     });
-    on('moviesTab', 'click', () => loadCatalog('movies'));
-    on('seriesTab', 'click', () => loadCatalog('series'));
+    on('presetStorage', 'click', () => { $('downloadParent').value = '/storage'; $('downloadParent').focus(); });
+    on('clearDownloadParent', 'click', () => { $('downloadParent').value = ''; $('downloadParent').focus(); });
+    on('moviesTab', 'click', () => { showView('catalog'); loadCatalog('movies'); });
+    on('seriesTab', 'click', () => { showView('catalog'); loadCatalog('series'); });
     on('search', 'input', ev => { state.search = ev.target.value; state.page = 1; render(); });
     on('category', 'change', ev => { state.category = ev.target.value; state.page = 1; render(); });
     on('back', 'click', back);
@@ -226,12 +400,12 @@
     on('clearSelection', 'click', () => { state.selected.clear(); render(); });
     on('downloadSelected', 'click', () => enqueue([...state.selected]));
     on('pauseDownload', 'click', async () => { try { await request(dataPaused ? '/api/downloads/resume' : '/api/downloads/pause', {}); await pollDownloads(); } catch (e) { toast(e.message, true); } });
-    on('cancelDownload', 'click', async () => { if (!confirm('Cancelar o download em andamento? Os demais arquivos da fila continuam.')) return; try { await request('/api/downloads/cancel', {}); await pollDownloads(); } catch (e) { toast(e.message, true); } });
+    on('cancelDownload', 'click', async () => { if (!await appDialog('Cancelar o download em andamento? Os demais arquivos da fila continuam.', { title: 'Cancelar download', confirmLabel: 'Cancelar download', danger: true })) return; try { await request('/api/downloads/cancel', {}); await pollDownloads(); } catch (e) { toast(e.message, true); } });
     on('showJobs', 'click', () => { state.jobsVisible = !state.jobsVisible; $('jobs').classList.toggle('hidden', !state.jobsVisible); $('showJobs').textContent = state.jobsVisible ? 'Ocultar fila' : 'Mostrar fila'; pollDownloads(); });
   }
   async function init() {
     wireEvents(); render();
-    try { await refreshState(); if (state.connected) await loadCatalog('movies'); }
+    try { await refreshState(); if (state.connected) await loadCatalog('movies'); else showView('config'); }
     catch (e) { toast(e.message, true); empty(e.message, 'Sem conexão com o servidor'); }
     await pollDownloads(); state.poll = window.setInterval(() => { if (!document.hidden || state.jobsVisible) pollDownloads(); }, 1300);
   }

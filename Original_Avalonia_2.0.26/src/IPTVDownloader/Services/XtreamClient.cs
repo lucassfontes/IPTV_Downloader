@@ -279,7 +279,15 @@ public sealed class XtreamClient
             var info = ep["info"] as JsonObject;
             var epNo = I(ep, "episode_num", I(ep, "episode"));
             var rawTitle = S(ep, "title", S(info, "name", S(ep, "name", $"Episódio {epNo}")));
-            var display = $"{series.Name} - S{seasonNo:00}E{epNo:00} - {rawTitle}";
+            if (epNo <= 0)
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(rawTitle,
+                    @"(?:S\d+E|\bE(?:p(?:is[oó]dio)?)?\s*|\b\d+x)(\d+)",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var parsed)) epNo = parsed;
+            }
+            var display = epNo > 0 ? $"{series.Name} - S{seasonNo:00}E{epNo:00} - {rawTitle}"
+                : $"{series.Name} - Temporada {seasonNo:00} - {rawTitle}";
             result.Add(new MediaItem
             {
                 Type = "episode",
@@ -300,7 +308,7 @@ public sealed class XtreamClient
                 ReleaseDate = S(info, "releasedate", S(info, "releaseDate"))
             });
         }
-        return result.OrderBy(e => e.EpisodeNumber).ToList();
+        return result.OrderBy(e => e.EpisodeNumber > 0 ? e.EpisodeNumber : int.MaxValue).ToList();
     }
 
     public static void ApplyMovieMetadata(MediaItem item, JsonObject payload)

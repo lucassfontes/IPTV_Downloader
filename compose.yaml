@@ -1,0 +1,37 @@
+name: iptv-downloader-web
+services:
+  iptv-downloader:
+    image: ghcr.io/lucassfontes/iptv_downloader:2.0.40
+    container_name: iptv-downloader-web
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:5078
+      XDG_DATA_HOME: /appdata
+      IPTV_DOWNLOAD_PARENT: /storage
+      IPTV_DOWNLOAD_ROOT_NAME: iptv_dowload
+    ports:
+      - "5088:5078"
+    volumes:
+      - /DATA/AppData/iptv-downloader-web:/appdata
+      - /DATA/Downloads:/storage
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5078/api/health"]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 60s
+x-casaos:
+  id: com.local.iptvdownloader.web
+  main: iptv-downloader
+  title:
+    en_US: IPTV Downloader
+    pt_BR: IPTV Downloader
+  category: Entertainment
+  architectures:
+    - amd64
+    - arm64
+  version: "2.0.40"
+  index: /
+  scheme: http
+  port_map: "5088"
+  icon: https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/Web/wwwroot/icon.png

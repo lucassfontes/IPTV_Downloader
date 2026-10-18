@@ -1,108 +1,100 @@
-**IPTV Downloader Web — v2.0.26 Beta**  
-**Interface web com motor original em C# para gerenciar e baixar filmes e séries de listas IPTV autorizadas.**  
-A interface abre no navegador, mas os downloads são processados **no computador ou servidor em que o aplicativo está executando**. A versão Avalonia original continua disponível em Original_Avalonia_2.0.26/.  
-***Beta:*** * esta versão web ainda não reproduz todas as funções da versão desktop, como o player incorporado. Use somente listas e conteúdos para os quais você tenha autorização.*  
-**Instalação rápida no ZimaOS (Docker)**  
-É o método recomendado para executar o IPTV Downloader no servidor sem instalar o SDK .NET e sem copiar o código C# para o ZimaOS. A imagem já compilada é distribuída pelo GitHub Container Registry (GHCR).  
-**Arquivos para baixar**  
-- [**⬇️ Baixar IPTV_Downloader_Docker.yml — instalação **](https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/IPTV_Downloader_Docker.yml "https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/IPTV_Downloader_Docker.yml")  
-- [⬇️ Baixar o projeto completo (ZIP)](https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip "https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip")  
-- [Ver o código-fonte no GitHub](https://github.com/lucassfontes/IPTV_Downloader "https://github.com/lucassfontes/IPTV_Downloader")  
-***Importante:*** * o link do YAML funciona depois que o arquivo * *IPTV_Downloader_Docker.yml* * estiver salvo na raiz da branch * *main* * deste repositório. Se o download mostrar * ***404*** *, publique o YAML antes de prosseguir.*  
-**Passo a passo pelo painel do ZimaOS**  
-1. **Verifique a imagem Docker:** em [GitHub Packages, confira se iptv_downloader está definido como  **Public**. A publicação é realizada pelo workflow do GitHub Actions.](https://github.com/lucassfontes?tab=packages "https://github.com/lucassfontes?tab=packages")  
-2. **Baixe o YAML** pelo link acima.  
-3. Entre no ZimaOS e abra **Aplicativos → Instalar aplicativo personalizado → Importar**.  
-4. Importe IPTV_Downloader_Docker.yml e confira os campos antes de instalar.  
-5. **Confira o SSD.** O arquivo está configurado para a pasta do servidor /media/devmon/MEDIA, montada dentro do contêiner em /storage. Se o seu SSD estiver em outro caminho, edite a primeira parte do volume indicado abaixo.  
-6. Confira que a **porta 5078** está livre e mapeada para a porta interna  **5078**. Se o ZimaOS não preencher o endereço de Web UI automaticamente, configure http://IP-DO-ZIMAOS:5078/.  
-7. Clique em **Instalar** e aguarde a imagem ser baixada e o contêiner iniciar.  
-8. Acesse o aplicativo pelo ícone do ZimaOS ou pelo navegador. Por exemplo: http://192.168.0.8:5078/**se esse ainda for o IP do seu servidor**.  
-**Configuração do Docker**  
-| | |  
-|-|-|  
-| **Item** | **Configuração atual** |   
-| Imagem | ghcr.io/lucassfontes/iptv_downloader:latest |   
-| Porta do ZimaOS → contêiner | 5078 → 5078 |   
-| Endereço web | http://IP-DO-ZIMAOS:5078/ |   
-| Ícone | [icon.png no GitHub](https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/Web/wwwroot/icon.png "https://raw.githubusercontent.com/lucassfontes/IPTV_Downloader/main/Web/wwwroot/icon.png") |   
-| SSD/HD no ZimaOS | /media/devmon/MEDIA |   
-| Mesmo SSD dentro do Docker | /storage |   
-| Nome da pasta principal | iptv_dowload |   
-| Dados persistentes | /DATA/AppData/iptv-downloader-web |   
-   
-**Para trocar o disco**, altere somente o lado esquerdo deste volume no arquivo YAML, mantendo /storage à direita:  
-volumes:  
-   - /DATA/AppData/iptv-downloader-web:/appdata  
-   - /media/devmon/MEDIA:/storage  
-   
-Exemplo: se o disco no ZimaOS estiver em /media/SSD2, use /media/SSD2:/storage. Não é preciso criar as subpastas de filmes e séries manualmente, mas o Docker precisa ter permissão de escrita no disco.  
-**Onde os filmes e séries são salvos?**  
-O C# recebe a pasta **pai** /storage e cria automaticamente a pasta principal  **iptv_dowload** e as subpastas de conteúdo. A organização é semelhante a:  
-SSD ou HD (/media/devmon/MEDIA/)  
- └── iptv_dowload/  
-     ├── filmes/  
-     │   └── Nome do Filme.mkv  
-     └── series/  
-         └── Nome da Serie/  
-             └── Temporada 01/  
-                 └── S01E01.mkv  
-   
-Se iptv_dowload já existir, o aplicativo reutiliza essa pasta; a instalação do Docker não apaga automaticamente o conteúdo do volume. Antes de trocar caminhos ou atualizar, faça backup dos arquivos importantes.  
-**Onde ficam as contas Xtream e as configurações?**  
-As contas salvas, configurações e dados do aplicativo ficam **fora do contêiner**, no servidor ZimaOS, pois o YAML monta /DATA/AppData/iptv-downloader-web:/appdata.  
-/DATA/AppData/iptv-downloader-web/  
- └── iptv-downloader/  
-     ├── data/  
-     │   ├── contas.json       # contas Xtream lembradas  
-     │   ├── config.json       # configurações  
-     │   ├── favoritos.json    # favoritos  
-     │   └── historico.json    # histórico salvo  
-     └── cache/  
-   
-Uma conta só é gravada em contas.json quando a opção para lembrar/salvar a conta for usada. **As senhas Xtream nesse arquivo não são criptografadas:** proteja o diretório, não coloque o JSON no GitHub e não compartilhe backups publicamente. Para manter esses dados ao atualizar a imagem Docker, preserve o volume /DATA/AppData/iptv-downloader-web:/appdata.  
-**Atualizar a versão no ZimaOS**  
-Após uma nova compilação/publicação bem-sucedida no GitHub Actions, atualize/recrie o contêiner para baixar a nova imagem :latest, **preservando os volumes** do SSD e de /appdata. Publicar uma atualização no GitHub, sozinho, não atualiza automaticamente um contêiner já em execução.  
-**Diagnóstico**  
-Se o aplicativo não abrir:  
-1. Confirme se o contêiner iptv-downloader-web está **Em execução** no painel do ZimaOS.  
-2. Confirme que o pacote GHCR é público e a porta 5078 não está em uso por outro aplicativo.  
-3. Confira se o endereço da Web UI aponta para o IP local correto do ZimaOS.  
-4. Veja os registros do contêiner no ZimaOS ou execute, caso tenha terminal:  
-5. docker logs --tail 100 iptv-downloader-web  
-   
-**Instalação no Zorin OS / Ubuntu / Linux (sem Docker)**  
-1. Instale o [SDK .NET 8.](https://dotnet.microsoft.com/download/dotnet/8.0 "https://dotnet.microsoft.com/download/dotnet/8.0")  
-2. [Baixe o projeto completo e extraia o ZIP.](https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip "https://github.com/lucassfontes/IPTV_Downloader/archive/refs/heads/main.zip")  
-3. Abra um terminal na raiz da pasta extraída.  
-4. Execute:  
-5. bash iniciar-web-linux.sh  
-   
-6. Acesse http://localhost:5078/ **no próprio computador**.  
-Para iniciar manualmente na raiz do repositório:  
-dotnet restore Web/IPTVDownloader.Web.csproj  
- dotnet run --project Web/IPTVDownloader.Web.csproj --urls http://127.0.0.1:5078  
-   
-**Instalação no Windows (sem Docker)**  
-1. Instale o [SDK .NET 8.](https://dotnet.microsoft.com/download/dotnet/8.0 "https://dotnet.microsoft.com/download/dotnet/8.0")  
-2. Baixe e extraia o ZIP completo do projeto.  
-3. Execute iniciar-web-windows.bat na raiz extraída.  
-4. Acesse http://localhost:5078/ no navegador.  
-**Recursos disponíveis na beta**  
-- Conexão Xtream com servidor, usuário e senha, com opção de lembrar a conta.  
-- Catálogo de filmes, séries, temporadas e episódios.  
-- Busca sem diferenciar acentos, filtros por categoria, índice alfabético e paginação.  
-- Fila para filmes, episódios, temporadas e séries inteiras.  
-- Motor de download original em C#: um download por vez, progresso e velocidade, pausar, continuar e cancelar o atual.  
-- Nomes de arquivos sem acentos, seguindo o motor C#.  
-- Escolha da pasta pai de download e filtro de conteúdo adulto.  
-**Limitações e segurança**  
-- É uma **versão beta**; o funcionamento completo de todos os fluxos com contas IPTV reais não foi validado aqui.  
-- A fila e os downloads em andamento não são recuperados automaticamente após reiniciar o servidor.  
-- O app web ainda não reproduz todas as telas da versão Avalonia, como o player incorporado.  
-- **A interface web não possui login próprio.** Não encaminhe a porta 5078 para a internet; use rede local confiável ou acesso por VPN protegida.  
-- No Docker, a aplicação escuta em 0.0.0.0:5078 dentro do contêiner para que a rede do ZimaOS consiga acessá-la. Nas instalações locais pelos scripts, o endereço sugerido é localhost.  
-- Não monte a raiz / do servidor no contêiner; conceda acesso apenas às pastas necessárias.  
-- Utilize somente conteúdo e listas IPTV para os quais tenha direito de acesso.  
-![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAnEAAAACCAYAAAA3pIp+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAANklEQVR4nO3OQQmAABRAsScYxpg/h5VMYARvRrCCNxG2BFtmZquOAAD4i3Ot7mr/egIAwGvXA224BcUMk6pDAAAAAElFTkSuQmCC)  
-**Projeto:** [lucassfontes/IPTV_Downloader ·  **Versão:** 2.0.26 Beta ·  **Backend:** C# / .NET 8 ·  **Interface:** Web](https://github.com/lucassfontes/IPTV_Downloader "https://github.com/lucassfontes/IPTV_Downloader")  
+# IPTV Downloader Web 2.0.28 Beta
+
+Atualização de código baseada no instalador 2.0.26 Beta. Não publicada no GitHub Container Registry e não instalada no seu servidor.
+
+## Mudanças
+
+- Configuração Conexões por arquivo: 1 (padrão), 2, 4, 8 ou 16. Cada tarefa guarda a escolha feita quando entrou na fila; mudar a configuração não altera trabalhos existentes. Reiniciar do zero aplica a escolha atual.
+- Arquivos pequenos podem usar menos partes; cada parte terá pelo menos cerca de 1 MiB. A conclusão de cada parte é registrada. Partes incompletas são preservadas para retomada.
+- Sem suporte a faixas HTTP e identificação do arquivo, um download novo usa conexão única. Se o servidor recusar uma parte depois da sondagem ou mudar o arquivo, informa falha e preserva as partes. Escolha 1 conexão e Reiniciar para abandonar a estratégia anterior.
+- A união das partes precisa de espaço adicional de aproximadamente o tamanho do arquivo. Backups criados ao reiniciar também ocupam espaço.
+- 16 conexões não garantem velocidade maior e podem saturar a rede ou esbarrar nos limites do provedor.
+
+
+- Um único arquivo é transferido por vez, inclusive após recuperar a fila. A temporada inteira entra na fila. O arquivo atual pode usar várias conexões para suas partes, conforme a configuração.
+- Série e temporada abrem pelo clique no cartão; episódio alterna seleção pelo clique ou pelo botão Selecionar. Baixar adiciona diretamente à fila, sem disparar a seleção ou navegação do cartão.
+- Mesmos cartões responsivos para séries, temporadas e episódios, com caminho de navegação e botão Voltar.
+- Temporadas e episódios ordenados numericamente na inclusão em lote. A lista de downloads mostra o atual e depois a fila na ordem de execução. Itens já presentes na fila não são reposicionados por uma nova inclusão.
+- Se o provedor não informar número de episódio, o código tenta extraí-lo do título; sem número reconhecível, o item fica ao final, sem inventar uma numeração.
+
+
+- Ícone verde de reprodução baseado no esboço aprovado, aplicado no cabeçalho, menu e favicon.
+
+- Filmes, Séries e Downloads em abas lado a lado; Configurações em área separada.
+- O contador de Downloads soma itens na fila, em andamento, pausados e com erro. Diminui ao concluir ou parar um item. Concluídos permanecem no histórico; a badge é ocultada ao zerar.
+- Menu lateral recolhível no computador: botão alterna entre ícones e rótulos, com nomes ao passar o mouse e preferência salva no navegador. No celular, navegação inferior e cartões responsivos.
+- Fila gravada atomicamente em `/appdata/iptv-downloader/data/download-queue.json`.
+- Ao iniciar o servidor, retoma os trabalhos que estavam baixando ou aguardando. Trabalhos pausados aguardam ação do usuário.
+- Download em `.part`, preservado após falha ou cancelamento. A posição real é lida do arquivo.
+- Retomada HTTP com validação de Content-Range e identificação do arquivo por ETag forte ou Last-Modified. Se não for possível retomar com segurança, informa o problema e oferece reiniciar.
+- Tamanho recebido precisa coincidir com o tamanho informado pelo servidor. Se o tamanho não for informado, a conclusão fica sem confirmação e o parcial é preservado.
+- Um SHA-256 local é registrado após uma transferência completa e conferido antes de reutilizar um arquivo final. Isso detecta alterações locais posteriores, mas não substitui um checksum fornecido pela origem nem garante que o vídeo original não tenha defeitos.
+- Arquivos antigos sem registro de conclusão não são considerados completos automaticamente.
+- A área Downloads mostra toda a fila e o histórico persistido, sem o limite anterior de 200 registros.
+- Botões por arquivo: Pausar, Continuar, Parar, Tentar novamente e Reiniciar download, conforme o estado. Pausar um item que aguarda remove-o da fila ativa até Continuar. Parar preserva o parcial.
+- Barra individual: vermelha no erro, azul na pausa, verde na conclusão. Erro e pausa mantêm a porcentagem alcançada; Reiniciar zera a porcentagem.
+- Tentar novamente e Reiniciar download aparecem quando há falha ou parada. Reiniciar guarda arquivos anteriores com sufixo `.backup-...`, consumindo espaço adicional.
+- Mantidas as pastas automáticas, nomes sem acentos e ordenação numérica dos episódios.
+
+## Estado da validação
+
+Sintaxe JavaScript validada com `node --check`. Revisão estática das alterações C# feita, mas **compilação .NET e execução real não foram realizadas**: este ambiente não tem o SDK .NET nem Docker. A tentativa de teste visual automatizado foi bloqueada pela ausência do navegador Chromium. Portanto, a interface também precisa de validação visual em dispositivo real. Esta é uma versão Beta para teste, não uma atualização já validada para produção.
+
+A transferência usa .NET: uma conexão por padrão, ou partes paralelas configuráveis dentro do mesmo arquivo. Compare a velocidade com a versão anterior; o antigo caminho via curl foi removido.
+
+## Testar sem substituir a instalação atual
+
+Siga primeiro `TESTE_RAPIDO_ZIMAOS.md`. O arquivo `compose.test.yaml` usa a porta 5079 e pastas separadas. O mesmo roteiro explica o ícone no cartão do ZimaOS e como atualizar seu endereço.
+
+## Preparar a atualização
+
+1. Extraia o pacote em uma pasta nova, separada da instalação atual.
+2. Confira no aplicativo atual do ZimaOS os volumes de dados e de mídia, a porta e o nome da pasta principal. O `compose.yaml` usa os caminhos do YAML anterior, que precisam corresponder à instalação em uso.
+3. Se necessário, crie um arquivo `.env` nesta pasta com `IPTV_APPDATA`, `IPTV_STORAGE`, `IPTV_ROOT_NAME` e `IPTV_PORT`. Para a instalação pelo script automático, o diretório de dados pode ser `/DATA/AppData/iptv-downloader-web-facil/dados`, diferente do padrão do Compose.
+4. Construa a nova imagem sem parar o aplicativo existente:
+
+```bash
+docker compose build
+```
+
+Se o build falhar, mantenha a instalação anterior e envie o erro. Não prossiga.
+
+5. Depois do build, pause os downloads na versão antiga, faça uma cópia da pasta de dados e pare o contêiner antigo pelo ZimaOS. A fila que só existe na memória da 2.0.26 não pode ser migrada automaticamente; registre os itens antes de parar. Não remova os volumes.
+6. Inicie na pasta nova:
+
+```bash
+docker compose up -d
+docker compose logs --tail=80
+```
+
+Caso o nome `iptv-downloader-web` já pertença ao contêiner antigo, renomeie o contêiner antigo parado pelo ZimaOS antes de iniciar. Não execute duas versões simultaneamente sobre a mesma pasta de downloads.
+
+Acesse `http://IP-DO-ZIMAOS:5078`, ou a porta escolhida. Atualize a página sem cache para carregar o novo CSS e JavaScript. A imagem `ghcr.io/lucassfontes/iptv_downloader:latest` não foi alterada por este pacote.
+
+Para voltar: pare a nova versão e inicie o contêiner anterior. A versão antiga não conhece os novos controles de integridade e retomada.
+
+## Checklist de teste
+
+- [ ] Compilar a imagem .NET sem erros.
+- [ ] Conectar a conta salva e conferir o mesmo destino de mídia.
+- [ ] Baixar um arquivo pequeno e conferir tamanho, conclusão e reprodução.
+- [ ] Interromper o contêiner durante um download de teste, iniciá-lo novamente e confirmar retomada da fila sem abrir o navegador. Não é necessário cortar a energia física.
+- [ ] Confirmar que servidor sem suporte à retomada mostra erro e não concatena uma resposta inteira ao parcial.
+- [ ] Confirmar tratamento de mudança do ETag/Last-Modified ou tamanho remoto.
+- [ ] Cancelar e tentar novamente; confirmar que o parcial foi preservado.
+- [ ] Reiniciar download e confirmar preservação do arquivo anterior como backup.
+- [ ] Conferir que arquivo antigo incompleto não recebe automaticamente status Concluído.
+- [ ] Conferir erro em transferência truncada, tamanho desconhecido e falta de espaço.
+- [ ] Testar pausa e retomada, fila com vários arquivos e episódios de uma temporada.
+- [ ] Abrir Catálogo, Downloads e Configurações no celular e no computador; testar busca, filtros, navegação e botões sem rolagem horizontal.
+
+O aplicativo continua sem autenticação própria: mantenha o acesso na rede local. A fila persistida contém as informações necessárias para autenticar os downloads, como as contas já salvas; proteja a pasta de dados.
+
+## Testes adicionais de partes (pendentes no ambiente real)
+
+- [ ] Testar 1, 2, 4, 8 e 16 conexões num arquivo de teste, comparando checksum com a origem.
+- [ ] Interromper e retomar durante as partes e durante a união.
+- [ ] Testar provedor sem Range, retorno 200 inesperado, faixa incorreta, timeout, 429 e mudança de ETag.
+- [ ] Confirmar que um arquivo seguinte só começa após terminar ou falhar o atual.
+- [ ] Testar pausa, continuar, parar, falha de uma parte e reiniciar com menos conexões.
+- [ ] Validar espaço insuficiente durante a união e preservação dos parciais.

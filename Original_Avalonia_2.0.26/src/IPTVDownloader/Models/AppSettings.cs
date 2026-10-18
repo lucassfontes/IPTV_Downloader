@@ -5,6 +5,9 @@ namespace IPTVDownloader.Models;
 
 public sealed class AppSettings
 {
+    [JsonPropertyName("download_connections")]
+    public int DownloadConnections { get; set; } = 1;
+
     [JsonPropertyName("download_parent")]
     public string DownloadParent { get; set; } = "";
 

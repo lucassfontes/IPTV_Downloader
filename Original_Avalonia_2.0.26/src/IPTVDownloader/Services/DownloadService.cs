@@ -8,11 +8,8 @@ using IPTVDownloader.Models;
 
 namespace IPTVDownloader.Services;
 
-public sealed class DownloadService
+public sealed partial class DownloadService
 {
-    private const int BufferSize = 1024 * 1024; // 1 MiB, igual ao bloco usado pela versão Python
-    private const int ParallelSegments = 4;
-    private const long MinSegmentedSize = 32L * 1024 * 1024; // 32 MiB
 
     private readonly XtreamClient _xtream;
     private readonly HttpClient _downloadHttp;
@@ -27,7 +24,7 @@ public sealed class DownloadService
         // uma taxa maior e mais estável.
         var handler = new SocketsHttpHandler
         {
-            MaxConnectionsPerServer = 8,
+            MaxConnectionsPerServer = 16,
             ConnectTimeout = TimeSpan.FromSeconds(15),
             PooledConnectionLifetime = TimeSpan.FromMinutes(30),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
@@ -50,74 +47,17 @@ public sealed class DownloadService
         _downloadHttp.DefaultRequestHeaders.ExpectContinue = false;
     }
 
-    public async Task DownloadBatchAsync(
-        IReadOnlyList<MediaItem> items,
-        XtreamAccount account,
-        string downloadRoot,
-        IProgress<DownloadProgress> progress,
-        Func<MediaItem, Task>? completedCallback = null,
-        AsyncPauseGate? pauseGate = null,
-        CancellationToken ct = default)
+    public async Task DownloadBatchAsync(IReadOnlyList<MediaItem> items, XtreamAccount account,
+        string downloadRoot, IProgress<DownloadProgress> progress,
+        Func<MediaItem, Task>? completedCallback = null, AsyncPauseGate? pauseGate = null,
+        CancellationToken ct = default, int connections = 1)
     {
-        Directory.CreateDirectory(downloadRoot);
-        var completed = 0;
-
-        for (var i = 0; i < items.Count; i++)
+        foreach (var item in items)
         {
-            ct.ThrowIfCancellationRequested();
-            var item = items[i];
-            item.Status = "Preparando...";
             var output = OutputPath(downloadRoot, item);
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-
-            if (File.Exists(output) && new FileInfo(output).Length > 0)
-            {
-                item.Status = "Já existe";
-                completed++;
-                progress.Report(new DownloadProgress(
-                    $"Já existe: {item.Name}",
-                    1,
-                    completed / (double)items.Count,
-                    0,
-                    completed,
-                    items.Count,
-                    new FileInfo(output).Length,
-                    new FileInfo(output).Length));
-                continue;
-            }
-
-            var url = ResolveUrl(item, account);
-            item.Status = "Baixando";
-            var fileProgress = new Progress<(double fraction, double speed, bool turbo, long downloaded, long total)>(p =>
-            {
-                var overall = (i + p.fraction) / Math.Max(1.0, items.Count);
-                var mode = p.turbo ? "Turbo • " : string.Empty;
-                progress.Report(new DownloadProgress(
-                    $"{mode}Baixando: {item.Name}",
-                    p.fraction,
-                    overall,
-                    p.speed,
-                    completed,
-                    items.Count,
-                    p.downloaded,
-                    p.total));
-            });
-
-            await DownloadFileAsync(url, output, fileProgress, pauseGate, ct);
-
-            item.Status = "Concluído";
-            completed++;
-            progress.Report(new DownloadProgress(
-                $"Concluído: {item.Name}",
-                1,
-                completed / (double)items.Count,
-                0,
-                completed,
-                items.Count,
-                FileLengthSafe(output),
-                FileLengthSafe(output)));
-
-            if (completedCallback is not null) await completedCallback(item);
+            await TransferAsync(ResolveUrl(item, account), output, progress, pauseGate, ct, connections);
+            if (completedCallback != null) await completedCallback(item);
         }
     }
 
@@ -162,515 +102,146 @@ public sealed class DownloadService
         return string.IsNullOrWhiteSpace(ext) ? "mp4" : ext.ToLowerInvariant();
     }
 
-    private async Task DownloadFileAsync(
-        string url,
-        string output,
-        IProgress<(double fraction, double speed, bool turbo, long downloaded, long total)> progress,
-        AsyncPauseGate? pauseGate,
-        CancellationToken ct)
+    public sealed class DownloadProblem : IOException
     {
-        var tempPath = output + ".part";
-        SafeDelete(tempPath);
-
-        // No Linux, prioriza o curl nativo para a transferência pesada. Ele usa
-        // a pilha de rede nativa do sistema e, em vários servidores Xtream,
-        // alcança a mesma taxa ou uma taxa maior que requests/Python.
-        // A URL (que pode conter usuário/senha) é enviada pelo stdin do curl,
-        // para não ficar exposta na linha de comando/process list.
-        if (OperatingSystem.IsLinux() && TryFindCurl(out var curlPath))
+        public DownloadProblem(string message) : base(message) { }
+    }
+    private sealed record ResumeInfo(string? ETag, DateTimeOffset? Modified, long Total);
+    private sealed record Receipt(long Length, string Sha256);
+    private static void AtomicJson<T>(string path, T value)
+    {
+        using (var file = new FileStream(path + ".tmp", FileMode.Create, FileAccess.Write))
         {
-            try
+            System.Text.Json.JsonSerializer.Serialize(file, value);
+            file.Flush(true);
+        }
+        File.Move(path + ".tmp", path, true);
+    }
+    private static T? ReadJson<T>(string path)
+    {
+        if (!File.Exists(path)) return default;
+        try { return System.Text.Json.JsonSerializer.Deserialize<T>(File.ReadAllText(path)); }
+        catch (System.Text.Json.JsonException) { return default; }
+    }
+    private static async Task<string> HashAsync(string path, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(path);
+        return Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(stream, ct));
+    }
+    public static void RestartFile(string output)
+    {
+        // Preserve previous files rather than erase a user's media.
+        var stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N")[..8];
+        foreach (var suffix in new[] { "", ".part", ".merge", ".resume.json", ".verified.json" })
+            if (File.Exists(output + suffix)) File.Move(output + suffix, output + suffix + ".backup-" + stamp);
+        if (Directory.Exists(output + ".segments")) Directory.Move(output + ".segments", output + ".segments.backup-" + stamp);
+    }
+    private async Task TransferAsync(string url, string output, IProgress<DownloadProgress> progress,
+        AsyncPauseGate? pause, CancellationToken ct, int connections)
+    {
+        var part = output + ".part";
+        var metadata = output + ".resume.json";
+        var receiptPath = output + ".verified.json";
+        if (File.Exists(output))
+        {
+            var receipt = ReadJson<Receipt>(receiptPath);
+            if (receipt != null && receipt.Length > 0 && new FileInfo(output).Length == receipt.Length
+                && await HashAsync(output, ct) == receipt.Sha256)
             {
-                await DownloadWithCurlAsync(
-                    curlPath,
-                    url,
-                    tempPath,
-                    progress,
-                    pauseGate,
-                    ct);
-
-                FinalizeDownload(tempPath, output);
+                File.Delete(receiptPath);
                 return;
             }
-            catch (OperationCanceledException)
-            {
-                SafeDelete(tempPath);
-                throw;
-            }
-            catch
-            {
-                // Se o curl falhar por qualquer incompatibilidade específica do
-                // provedor, limpa o parcial e volta automaticamente ao motor .NET.
-                SafeDelete(tempPath);
-            }
+            throw new DownloadProblem("Arquivo existente sem confirmação de integridade. Reinicie o download; o arquivo antigo será preservado como backup.");
         }
-
-        await DownloadSingleStreamAsync(url, tempPath, progress, pauseGate, ct);
-        FinalizeDownload(tempPath, output);
-    }
-
-    private async Task DownloadWithCurlAsync(
-        string curlPath,
-        string url,
-        string tempPath,
-        IProgress<(double fraction, double speed, bool turbo, long downloaded, long total)> progress,
-        AsyncPauseGate? pauseGate,
-        CancellationToken ct)
-    {
-        var total = await TryGetContentLengthAsync(url, ct);
-
-        var psi = new ProcessStartInfo
+        if (!File.Exists(part) && (connections > 1 || Directory.Exists(output + ".segments")))
+            if (await TrySegmentedAsync(url, output, connections, progress, pause, ct)) return;
+        var offset = File.Exists(part) ? new FileInfo(part).Length : 0;
+        var info = ReadJson<ResumeInfo>(metadata);
+        if (offset > 0 && (info == null || (info.ETag == null && info.Modified == null)))
+            throw new DownloadProblem("O servidor não forneceu identificação segura para retomar. Use Reiniciar download.");
+        if (offset > 0 && info!.Total > 0 && offset == info.Total)
         {
-            FileName = curlPath,
-            UseShellExecute = false,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-
-        // Opções de transferência. A URL é passada via --config - (stdin) para
-        // não expor credenciais do Xtream em /proc/<pid>/cmdline.
-        psi.ArgumentList.Add("--config");
-        psi.ArgumentList.Add("-");
-        psi.ArgumentList.Add("--location");
-        psi.ArgumentList.Add("--fail");
-        psi.ArgumentList.Add("--silent");
-        psi.ArgumentList.Add("--show-error");
-        psi.ArgumentList.Add("--http1.1");
-        psi.ArgumentList.Add("--connect-timeout");
-        psi.ArgumentList.Add("15");
-        psi.ArgumentList.Add("--retry");
-        psi.ArgumentList.Add("2");
-        psi.ArgumentList.Add("--retry-delay");
-        psi.ArgumentList.Add("1");
-        psi.ArgumentList.Add("--output");
-        psi.ArgumentList.Add(tempPath);
-
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        if (!process.Start())
-            throw new IOException("Não foi possível iniciar o motor de download nativo.");
-
-        // Consumir stdout/stderr evita bloqueio caso o processo produza saída.
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = process.StandardError.ReadToEndAsync(ct);
-
-        var config = $"url = {CurlQuote(url)}\n" +
-                     $"header = {CurlQuote("User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152.0 Safari/537.36")}\n" +
-                     $"header = {CurlQuote("Accept: */*")}\n" +
-                     $"header = {CurlQuote("Accept-Encoding: identity")}\n";
-
-        await process.StandardInput.WriteAsync(config.AsMemory(), ct);
-        await process.StandardInput.FlushAsync(ct);
-        process.StandardInput.Close();
-
-        long lastBytes = 0;
-        var sw = Stopwatch.StartNew();
-        var lastTime = TimeSpan.Zero;
-        var nativePaused = false;
-
-        try
-        {
-            while (!process.HasExited)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                if (pauseGate is not null)
-                {
-                    if (pauseGate.IsPaused && !nativePaused)
-                    {
-                        SendUnixSignal(process.Id, "STOP");
-                        nativePaused = true;
-                    }
-                    else if (!pauseGate.IsPaused && nativePaused)
-                    {
-                        SendUnixSignal(process.Id, "CONT");
-                        nativePaused = false;
-                        lastBytes = FileLengthSafe(tempPath);
-                        lastTime = sw.Elapsed;
-                    }
-                }
-
-                var now = sw.Elapsed;
-                if (!nativePaused && now - lastTime >= TimeSpan.FromMilliseconds(250))
-                {
-                    var current = FileLengthSafe(tempPath);
-                    var delta = current - lastBytes;
-                    var seconds = (now - lastTime).TotalSeconds;
-                    var speed = seconds > 0 && delta >= 0 ? delta / seconds : 0;
-                    var fraction = total > 0 ? Math.Clamp(current / (double)total, 0, 1) : 0;
-                    progress.Report((fraction, speed, true, current, total));
-                    lastBytes = current;
-                    lastTime = now;
-                }
-
-                await Task.Delay(100, ct);
-            }
-
-            await process.WaitForExitAsync(ct);
-            var stderr = await stderrTask;
-            _ = await stdoutTask;
-
-            if (process.ExitCode != 0)
-                throw new IOException(string.IsNullOrWhiteSpace(stderr)
-                    ? $"curl encerrou com código {process.ExitCode}."
-                    : stderr.Trim());
-
-            var finalSize = FileLengthSafe(tempPath);
-            if (finalSize <= 0)
-                throw new IOException("O servidor não retornou dados para o arquivo.");
-
-            progress.Report((1, 0, true, finalSize, total > 0 ? total : finalSize));
+            await FinishAsync();
+            return;
         }
-        catch
-        {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    if (nativePaused) SendUnixSignal(process.Id, "CONT");
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch
-            {
-                // best effort
-            }
-            throw;
-        }
-    }
-
-    private async Task<long> TryGetContentLengthAsync(string url, CancellationToken ct)
-    {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Head, url);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-            using var response = await _downloadHttp.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
-            return response.IsSuccessStatusCode
-                ? response.Content.Headers.ContentLength ?? 0
-                : 0;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return 0;
-        }
-    }
-
-    private static bool TryFindCurl(out string path)
-    {
-        path = string.Empty;
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            try
-            {
-                var candidate = Path.Combine(dir, "curl");
-                if (File.Exists(candidate))
-                {
-                    path = candidate;
-                    return true;
-                }
-            }
-            catch
-            {
-                // ignora entrada inválida do PATH
-            }
-        }
-
-        foreach (var candidate in new[] { "/usr/bin/curl", "/bin/curl" })
-        {
-            if (File.Exists(candidate))
-            {
-                path = candidate;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string CurlQuote(string value) =>
-        "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"")
-            .Replace("\r", string.Empty).Replace("\n", string.Empty) + "\"";
-
-    private static long FileLengthSafe(string path)
-    {
-        try { return File.Exists(path) ? new FileInfo(path).Length : 0; }
-        catch { return 0; }
-    }
-
-    private static void SendUnixSignal(int pid, string signal)
-    {
-        try
-        {
-            using var signalProcess = Process.Start(new ProcessStartInfo
-            {
-                FileName = "/bin/kill",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                ArgumentList = { $"-{signal}", pid.ToString() }
-            });
-            signalProcess?.WaitForExit(1000);
-        }
-        catch
-        {
-            // Se o sinal não puder ser enviado, o download continua; cancelar
-            // ainda funciona pelo encerramento do processo principal.
-        }
-    }
-
-    private async Task<(bool SupportsRanges, long Length)> ProbeRangeAsync(string url, CancellationToken ct)
-    {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Range = new RangeHeaderValue(0, 0);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-
-            using var response = await _downloadHttp.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
-
-            if (response.StatusCode != HttpStatusCode.PartialContent)
-                return (false, response.Content.Headers.ContentLength ?? 0);
-
-            var length = response.Content.Headers.ContentRange?.Length ?? 0;
-            return (length > 0, length);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            // Falha na sondagem não deve impedir o download normal.
-            return (false, 0);
-        }
-    }
-
-    private async Task DownloadSegmentedAsync(
-        string url,
-        string tempPath,
-        long totalLength,
-        IProgress<(double fraction, double speed, bool turbo, long downloaded, long total)> progress,
-        AsyncPauseGate? pauseGate,
-        CancellationToken ct)
-    {
-        await using (var preallocate = new FileStream(
-                         tempPath,
-                         FileMode.Create,
-                         FileAccess.Write,
-                         FileShare.ReadWrite,
-                         BufferSize,
-                         FileOptions.Asynchronous | FileOptions.SequentialScan))
-        {
-            preallocate.SetLength(totalLength);
-        }
-
-        long downloaded = 0;
-        var sw = Stopwatch.StartNew();
-        var reportLock = new object();
-        long lastBytes = 0;
-        var lastTime = TimeSpan.Zero;
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var workerCt = linkedCts.Token;
-
-        void ReportIfNeeded(bool force = false)
-        {
-            lock (reportLock)
-            {
-                var elapsed = sw.Elapsed;
-                if (!force && elapsed - lastTime < TimeSpan.FromMilliseconds(500)) return;
-
-                var current = Interlocked.Read(ref downloaded);
-                var deltaBytes = current - lastBytes;
-                var deltaSeconds = (elapsed - lastTime).TotalSeconds;
-                var speed = deltaSeconds > 0 ? deltaBytes / deltaSeconds : 0;
-                var fraction = totalLength > 0
-                    ? Math.Clamp(current / (double)totalLength, 0, 1)
-                    : 0;
-
-                progress.Report((fraction, speed, true, current, totalLength));
-                lastBytes = current;
-                lastTime = elapsed;
-            }
-        }
-
-        var segmentSize = (long)Math.Ceiling(totalLength / (double)ParallelSegments);
-        var tasks = new List<Task>(ParallelSegments);
-
-        for (var part = 0; part < ParallelSegments; part++)
-        {
-            var start = part * segmentSize;
-            if (start >= totalLength) break;
-            var end = Math.Min(totalLength - 1, start + segmentSize - 1);
-
-            tasks.Add(Task.Run(async () =>
-            {
-                try
-                {
-                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                    request.Headers.Range = new RangeHeaderValue(start, end);
-                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-
-                    using var response = await _downloadHttp.SendAsync(
-                        request,
-                        HttpCompletionOption.ResponseHeadersRead,
-                        workerCt);
-
-                    if (response.StatusCode != HttpStatusCode.PartialContent)
-                    {
-                        linkedCts.Cancel();
-                        throw new RangeNotSupportedException();
-                    }
-
-                    await using var input = await response.Content.ReadAsStreamAsync(workerCt);
-                    await using var file = new FileStream(
-                        tempPath,
-                        FileMode.Open,
-                        FileAccess.Write,
-                        FileShare.ReadWrite,
-                        BufferSize,
-                        FileOptions.Asynchronous | FileOptions.RandomAccess);
-
-                    file.Seek(start, SeekOrigin.Begin);
-                    var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-                    try
-                    {
-                        long remaining = end - start + 1;
-                        while (remaining > 0)
-                        {
-                            if (pauseGate is not null) await pauseGate.WaitAsync(workerCt);
-                            var want = (int)Math.Min(buffer.Length, remaining);
-                            var read = await input.ReadAsync(buffer.AsMemory(0, want), workerCt);
-                            if (read <= 0) break;
-
-                            await file.WriteAsync(buffer.AsMemory(0, read), workerCt);
-                            remaining -= read;
-                            Interlocked.Add(ref downloaded, read);
-                            ReportIfNeeded();
-                        }
-
-                        if (remaining != 0)
-                            throw new IOException("O servidor encerrou uma parte do download antes do esperado.");
-                    }
-                    finally
-                    {
-                        ArrayPool<byte>.Shared.Return(buffer);
-                    }
-                }
-                catch
-                {
-                    linkedCts.Cancel();
-                    throw;
-                }
-            }, workerCt));
-        }
-
-        try
-        {
-            await Task.WhenAll(tasks);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            throw new RangeNotSupportedException();
-        }
-
-        ReportIfNeeded(force: true);
-        progress.Report((1, 0, true, totalLength, totalLength));
-    }
-
-    private async Task DownloadSingleStreamAsync(
-        string url,
-        string tempPath,
-        IProgress<(double fraction, double speed, bool turbo, long downloaded, long total)> progress,
-        AsyncPauseGate? pauseGate,
-        CancellationToken ct)
-    {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-
-        using var response = await _downloadHttp.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            ct);
-        response.EnsureSuccessStatusCode();
-
-        var total = response.Content.Headers.ContentLength ?? 0;
-        await using var input = await response.Content.ReadAsStreamAsync(ct);
-        await using var file = new FileStream(
-            tempPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            BufferSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-        long readTotal = 0;
-        var sw = Stopwatch.StartNew();
-        long lastBytes = 0;
-        var lastTime = TimeSpan.Zero;
-
-        try
+        if (offset > 0)
         {
+            request.Headers.Range = new RangeHeaderValue(offset, null);
+            request.Headers.IfRange = info!.ETag != null
+                ? new RangeConditionHeaderValue(new EntityTagHeaderValue(info.ETag))
+                : new RangeConditionHeaderValue(info.Modified!.Value);
+        }
+        using var headersTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        headersTimeout.CancelAfter(TimeSpan.FromSeconds(45));
+        using var response = await _downloadHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headersTimeout.Token);
+        if (offset > 0 && response.StatusCode != HttpStatusCode.PartialContent)
+            throw new DownloadProblem("Servidor recusou a retomada ou alterou o arquivo. Use Reiniciar download.");
+        if (response.StatusCode != HttpStatusCode.OK && response.StatusCode != HttpStatusCode.PartialContent)
+            throw new DownloadProblem($"Servidor respondeu HTTP {(int)response.StatusCode}. Tente novamente mais tarde.");
+        var range = response.Content.Headers.ContentRange;
+        long total;
+        if (response.StatusCode == HttpStatusCode.PartialContent)
+        {
+            if (range == null || range.Unit != "bytes" || range.From != offset || range.Length == null
+                || range.To != range.Length - 1 || (response.Content.Headers.ContentLength is long size && size != range.Length - offset))
+                throw new DownloadProblem("Servidor enviou uma faixa de dados inconsistente. Arquivo parcial preservado.");
+            total = range.Length.Value;
+        }
+        else total = response.Content.Headers.ContentLength ?? 0;
+        var etag = response.Headers.ETag is { IsWeak: false } tag ? tag.ToString() : null;
+        var modified = response.Content.Headers.LastModified;
+        if (offset > 0 && (total != info!.Total || (info.ETag != null && etag != info.ETag)
+            || (info.ETag == null && modified != info.Modified)))
+            throw new DownloadProblem("O arquivo no servidor mudou. Use Reiniciar download.");
+        info = new ResumeInfo(etag, modified, total);
+        AtomicJson(metadata, info);
+        await using (var input = await response.Content.ReadAsStreamAsync(ct))
+        await using (var file = new FileStream(part, offset > 0 ? FileMode.Append : FileMode.Create,
+            FileAccess.Write, FileShare.Read, 131072, FileOptions.Asynchronous))
+        {
+            var buffer = new byte[131072];
+            var watch = Stopwatch.StartNew();
+            long downloaded = offset, last = offset;
+            var lastTime = TimeSpan.Zero;
             while (true)
             {
-                if (pauseGate is not null) await pauseGate.WaitAsync(ct);
-                var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
-                if (read <= 0) break;
-
+                if (pause != null) await pause.WaitAsync(ct);
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(60));
+                var read = await input.ReadAsync(buffer, timeout.Token);
+                if (read == 0) break;
+                if (total > 0 && downloaded + read > total)
+                    throw new DownloadProblem("Servidor enviou dados além do tamanho esperado. Reinicie o download.");
                 await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                readTotal += read;
-
-                if (sw.Elapsed - lastTime >= TimeSpan.FromMilliseconds(500))
+                downloaded += read;
+                if (watch.Elapsed - lastTime >= TimeSpan.FromSeconds(1))
                 {
-                    var deltaBytes = readTotal - lastBytes;
-                    var deltaSeconds = (sw.Elapsed - lastTime).TotalSeconds;
-                    var speed = deltaSeconds > 0 ? deltaBytes / deltaSeconds : 0;
-                    var fraction = total > 0 ? Math.Clamp(readTotal / (double)total, 0, 1) : 0;
-                    progress.Report((fraction, speed, false, readTotal, total));
-                    lastBytes = readTotal;
-                    lastTime = sw.Elapsed;
+                    file.Flush(true);
+                    var speed = (downloaded - last) / (watch.Elapsed - lastTime).TotalSeconds;
+                    progress.Report(new DownloadProgress("Baixando", total > 0 ? downloaded / (double)total : 0,
+                        0, speed, 0, 1, downloaded, total));
+                    last = downloaded; lastTime = watch.Elapsed;
                 }
             }
+            file.Flush(true);
+            if (total <= 0) throw new DownloadProblem("Transferência encerrada, mas o servidor não informou o tamanho. Conclusão não confirmada; arquivo parcial preservado.");
+            if (downloaded != total) throw new DownloadProblem("Arquivo incompleto. Use Tentar novamente para retomar.");
         }
-        finally
+        await FinishAsync();
+
+        async Task FinishAsync()
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            ct.ThrowIfCancellationRequested();
+            var length = new FileInfo(part).Length;
+            var hash = await HashAsync(part, ct);
+            // Receipt is durable before rename; recovery can finish a verified partial.
+            AtomicJson(receiptPath, new Receipt(length, hash));
+            File.Move(part, output);
+            if (File.Exists(metadata)) File.Delete(metadata);
+            // A confirmação de integridade já terminou; não deixar JSON ao lado do vídeo.
+            if (File.Exists(receiptPath)) File.Delete(receiptPath);
+            progress.Report(new DownloadProgress("Concluído", 1, 1, 0, 1, 1, length, length));
         }
-
-        progress.Report((1, 0, false, readTotal, total > 0 ? total : readTotal));
-    }
-
-    private static void FinalizeDownload(string tempPath, string output)
-    {
-        if (File.Exists(output)) File.Delete(output);
-        File.Move(tempPath, output);
-    }
-
-    private static void SafeDelete(string path)
-    {
-        try
-        {
-            if (File.Exists(path)) File.Delete(path);
-        }
-        catch
-        {
-            // O próximo FileMode.Create/Open vai produzir uma mensagem útil.
-        }
-    }
-
-    private sealed class RangeNotSupportedException : Exception
-    {
     }
 }
