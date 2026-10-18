@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>2.0.28-web-beta</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Motor do projeto 2.0.26 original, compilado diretamente, sem Avalonia. -->
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Services/XtreamClient.cs" Link="Engine/XtreamClient.cs" />
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Services/DownloadService.cs" Link="Engine/DownloadService.cs" />
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Services/SettingsStore.cs" Link="Engine/SettingsStore.cs" />
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Infrastructure/TextTools.cs" Link="Engine/TextTools.cs" />
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Infrastructure/AsyncPauseGate.cs" Link="Engine/AsyncPauseGate.cs" />
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Models/DownloadProgress.cs" Link="Engine/DownloadProgress.cs" />
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Models/XtreamAccount.cs" Link="Engine/XtreamAccount.cs" />
+    <Compile Include="../Original_Avalonia_2.0.26/src/IPTVDownloader/Models/AppSettings.cs" Link="Engine/AppSettings.cs" />
+  </ItemGroup>
+</Project>

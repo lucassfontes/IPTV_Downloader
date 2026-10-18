@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Testar IPTV Downloader Web
+Comment=Abre o teste no navegador
+Exec=bash -c 'cd "$(dirname "$1")" && bash TESTAR_NO_LINUX.sh' dummy %k
+Terminal=true
+Icon=utilities-terminal
+Categories=Network;

@@ -1,0 +1,13 @@
+TESTE DO LAYOUT NOVO 2.0.31
+
+1. Feche a janela do teste anterior se desejar.
+2. Execute TESTAR_NO_LINUX.sh (Zorin/Linux) ou TESTAR_NO_WINDOWS.bat (Windows).
+3. Abra http://127.0.0.1:5090
+4. Clique Configurações > Armazenamento.
+5. Verifique o grande cabeçalho "Armazenamento e downloads" e a etiqueta "NOVO LAYOUT · 2.0.31".
+
+IMPORTANTE: a porta 5090 é intencionalmente diferente da versão antiga (5078).
+Se você abrir 5078 verá o projeto antigo. Para o Docker/ZimaOS, a porta continua configurada conforme o compose original até publicação da atualização.
+
+VERSÃO 2.0.32: um card por linha e indicador animado no carregamento do catálogo.
+Teste: http://127.0.0.1:5090.
