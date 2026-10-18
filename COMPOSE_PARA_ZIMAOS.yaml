@@ -1,7 +1,7 @@
 name: iptv-downloader-web
 services:
   iptv-downloader:
-    image: ghcr.io/lucassfontes/iptv_downloader:2.0.40
+    image: "ghcr.io/lucassfontes/iptv_downloader:latest"
     container_name: iptv-downloader-web
     restart: unless-stopped
     environment:
