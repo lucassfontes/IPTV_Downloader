@@ -1,6 +1,6 @@
 # IPTV Downloader Web 2.0.28 Beta
 
-Atualização de código baseada no instalador 2.0.26 Beta. Não publicada no GitHub Container Registry e não instalada no seu servidor.
+Atualização de código baseada no instalador 2.0.26 Beta.
 
 ## Mudanças
 
